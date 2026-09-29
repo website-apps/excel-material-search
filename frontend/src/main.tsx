@@ -4,6 +4,7 @@ import ExcelAdminLoginPage from "./pages/ExcelAdminLoginPage";
 import ExcelMaterialSearchPage from "./pages/ExcelMaterialSearchPage";
 import "./inherited.css";
 import "./shell.css";
+import { navigateApplication } from "./navigation";
 
 function App() {
   const [path, setPath] = React.useState(location.pathname);
@@ -13,8 +14,7 @@ function App() {
     return () => window.removeEventListener("popstate", update);
   }, []);
   function navigate(next: string) {
-    history.pushState(null, "", next);
-    setPath(next);
+    navigateApplication(next, setPath);
   }
   return <main className="page">
     <nav className="app-navigation" aria-label="主站导航"><a href="/">AI 服务平台</a><a href="/apps">AI 应用</a></nav>

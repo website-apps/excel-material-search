@@ -8,4 +8,6 @@
 .description { color: #65706c; line-height: 1.7; }
 .form { display: grid; gap: 14px; margin: 24px 0; }
 .ai-app-admin-back-link { color: #135f59; font-size: 14px; }
+.archive-document-actions button { padding: 0; }
+.archive-document-actions svg { flex-shrink: 0; }
 @media (max-width: 600px) { .page { padding: 12px; } .app-navigation { padding-inline: 0; } }
