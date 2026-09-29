@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "id": "excel-material-search",
+  "name": "器件资料与 BOM 检索",
+  "description": "检索器件资料与 BOM，定位物料、文件及工作表。",
+  "port": 8080,
+  "health_path": "/health",
+  "data_contract": "archive-v1",
+  "database": true
+}
