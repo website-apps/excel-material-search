@@ -316,6 +316,30 @@ body {
   font-size: 13px;
 }
 
+.ai-app-file-filters {
+  display: flex;
+  flex: 1 1 540px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-app-file-filters input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.ai-app-file-filters select {
+  flex: 1 1 150px;
+  width: auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 30px 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 .ai-app-file-batch-actions {
   display: flex;
   align-items: center;
@@ -1450,6 +1474,28 @@ button:disabled {
 @media (max-width: 600px) {
   .archive-workspace {
     margin-top: 22px;
+  }
+
+  .archive-workspace .ai-app-files .ai-app-panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .archive-workspace .ai-app-file-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .archive-workspace .ai-app-file-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .archive-workspace .ai-app-file-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 12px;
+  }
+
+  .archive-workspace .ai-app-file-actions {
+    grid-column: 2;
   }
 
   .archive-header h1 {

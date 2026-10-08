@@ -5,6 +5,8 @@ export interface ErrorResponse {
 export interface ExcelIndexedFile {
   id?: number;
   file_name: string;
+  board_code?: string;
+  main_chip?: string;
   status: "ready" | "indexing" | "failed";
   sheet_count?: number;
   indexed_cell_count?: number;

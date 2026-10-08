@@ -64,6 +64,30 @@ class ApplicationTests(unittest.TestCase):
         with self.client.get(prefix + "/preview") as response:
             self.assertEqual(response.data, b"part specifications")
 
+    def test_bom_list_and_upload_expose_current_filter_metadata_only_to_admins(self):
+        self.login()
+        response = self.client.post(self.api + "/files", data={"files": (io.BytesIO(workbook_bytes()), "RD_X2000_DEMO_V1.0.xlsx")})
+        self.assertEqual(response.status_code, 201)
+        uploaded = response.json["files"][0]
+        self.assertEqual((uploaded["board_code"], uploaded["main_chip"]), ("RD", "X2000"))
+        listed = self.client.get(self.api + "/files").json["files"][0]
+        self.assertEqual((listed["board_code"], listed["main_chip"]), ("RD", "X2000"))
+        document = self.client.get(self.api + "/documents?kind=bom").json["documents"][0]
+        response = self.client.put(self.api + f"/documents/{document['id']}", json={"board_type": "产品板", "main_chip": "X3000"})
+        self.assertEqual(response.status_code, 200)
+        listed = self.client.get(self.api + "/files").json["files"][0]
+        self.assertEqual((listed["board_code"], listed["main_chip"]), ("PD", "X3000"))
+        self.assertNotIn("content_text", listed)
+        self.client.post(self.api + "/admin/logout")
+        self.assertEqual(self.client.get(self.api + "/files").status_code, 401)
+
+    def test_unrecognized_bom_filename_has_empty_filter_metadata(self):
+        self.login()
+        response = self.client.post(self.api + "/files", data={"files": (io.BytesIO(workbook_bytes()), "unclassified.xlsx")})
+        self.assertEqual(response.status_code, 201)
+        uploaded = response.json["files"][0]
+        self.assertEqual((uploaded["board_code"], uploaded["main_chip"]), ("", ""))
+
     def test_bad_login_is_rejected_and_rate_limited(self):
         for attempt in range(6):
             response = self.client.post(self.api + "/admin/login", json={"username": "tester", "password": "wrong"})

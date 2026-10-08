@@ -536,6 +536,8 @@ function BomMaterialPanel(props: PanelProps) {
   const setError = props.onError;
   const [query, setQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
+  const [boardCode, setBoardCode] = useState("");
+  const [mainChip, setMainChip] = useState("");
   const [files, setFiles] = useState<ExcelIndexedFile[]>([]);
   const [matches, setMatches] = useState<ExcelIndexMatch[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -545,6 +547,19 @@ function BomMaterialPanel(props: PanelProps) {
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const filterOptions = useMemo(() => ({
+    boardCodes: Array.from(new Set(files.map((file) => file.board_code || "").filter((code) => code === "RD" || code === "PD"))).sort(),
+    mainChips: Array.from(new Set(files.map((file) => file.main_chip || "").filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-CN"))
+  }), [files]);
+
+  useEffect(() => {
+    if (boardCode && boardCode !== "__other__" && !filterOptions.boardCodes.some((code) => code === boardCode)) {
+      setBoardCode("");
+    }
+    if (mainChip && mainChip !== "__other__" && !filterOptions.mainChips.includes(mainChip)) {
+      setMainChip("");
+    }
+  }, [filterOptions, boardCode, mainChip]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -678,9 +693,12 @@ function BomMaterialPanel(props: PanelProps) {
 
   const readyFileCount = files.filter((file) => file.status === "ready").length;
   const normalizedFileQuery = fileQuery.trim().toLocaleLowerCase();
-  const filteredFiles = normalizedFileQuery
-    ? files.filter((file) => file.file_name.toLocaleLowerCase().includes(normalizedFileQuery))
-    : files;
+  const filteredFiles = files.filter((file) => {
+    if (normalizedFileQuery && !file.file_name.toLocaleLowerCase().includes(normalizedFileQuery)) return false;
+    if (boardCode === "__other__" ? ["RD", "PD"].includes(file.board_code || "") : boardCode && file.board_code !== boardCode) return false;
+    if (mainChip === "__other__" ? Boolean(file.main_chip) : mainChip && file.main_chip !== mainChip) return false;
+    return true;
+  });
   const visibleFileIds = filteredFiles.flatMap((file) => (file.id == null ? [] : [file.id]));
   const allVisibleFilesSelected =
     visibleFileIds.length > 0 && visibleFileIds.every((fileId) => selectedFileIds.includes(fileId));
@@ -700,7 +718,7 @@ function BomMaterialPanel(props: PanelProps) {
         <div className="ai-app-panel-heading">
           <div>
             <span>文件库</span>
-            <h2>{files.length} 个文件</h2>
+            <h2>{boardCode || mainChip || normalizedFileQuery ? `${filteredFiles.length} / ${files.length}` : files.length} 个文件</h2>
           </div>
           <div className="ai-app-file-heading-actions">
             <span className="ai-app-muted">
@@ -731,13 +749,25 @@ function BomMaterialPanel(props: PanelProps) {
         {files.length ? (
           <>
             <div className="ai-app-file-search">
-              <input
-                type="search"
-                aria-label="搜索文件库"
-                placeholder="搜索文件名"
-                value={fileQuery}
-                onChange={(event) => setFileQuery(event.target.value)}
-              />
+              <div className="ai-app-file-filters">
+                <input
+                  type="search"
+                  aria-label="搜索文件库"
+                  placeholder="搜索文件名"
+                  value={fileQuery}
+                  onChange={(event) => { setFileQuery(event.target.value); setSelectedFileIds([]); }}
+                />
+                <select aria-label="板型筛选" value={boardCode} onChange={(event) => { setBoardCode(event.target.value); setSelectedFileIds([]); }}>
+                  <option value="">所有板型</option>
+                  {filterOptions.boardCodes.map((code) => <option key={code} value={code}>{code} · {code === "RD" ? "开发板" : "产品板"}</option>)}
+                  <option value="__other__">其他</option>
+                </select>
+                <select aria-label="主芯片筛选" value={mainChip} onChange={(event) => { setMainChip(event.target.value); setSelectedFileIds([]); }}>
+                  <option value="">所有主芯片</option>
+                  {filterOptions.mainChips.map((chip) => <option key={chip} value={chip}>{chip}</option>)}
+                  <option value="__other__">其他</option>
+                </select>
+              </div>
               <div className="ai-app-file-batch-actions">
                 <label className="ai-app-file-select-all">
                   <input

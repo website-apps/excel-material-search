@@ -94,6 +94,13 @@ class ArchiveStore:
             if self._matches(row, query, kind, category, vendor, board_code, main_chip)
         ]
 
+    def bom_file_metadata(self) -> dict[int, dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT excel_file_id, board_code, main_chip FROM archive_documents WHERE kind = 'bom'"
+            ).fetchall()
+        return {row["excel_file_id"]: dict(row) for row in rows if row["excel_file_id"] is not None}
+
     def query_documents(self, query: str, *, kind: str = "bom") -> dict[str, Any]:
         normalized = _normalize_text(query)
         if not normalized:

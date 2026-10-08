@@ -13,7 +13,7 @@ EXCEL_MATERIAL_APP_SLUG = 'excel-material-search'
 def register_routes(app, excel_index, archive_store, app_admins):
     app_admin_login_failures = {}
 
-    def public_excel_file(indexed_file: dict[str, object]) -> dict[str, object]:
+    def public_excel_file(indexed_file: dict[str, object], metadata: dict[str, object]) -> dict[str, object]:
         return {
             "id": indexed_file["id"],
             "file_name": indexed_file["original_name"],
@@ -22,6 +22,8 @@ def register_routes(app, excel_index, archive_store, app_admins):
             "indexed_cell_count": indexed_file["indexed_cell_count"],
             "error": indexed_file.get("error"),
             "created_at": indexed_file["created_at"],
+            "board_code": metadata.get("board_code", ""),
+            "main_chip": metadata.get("main_chip", ""),
         }
 
     def app_admin_session_key(app_slug: str) -> str:
@@ -97,7 +99,8 @@ def register_routes(app, excel_index, archive_store, app_admins):
         error_response = require_app_admin(EXCEL_MATERIAL_APP_SLUG)
         if error_response is not None:
             return error_response
-        return jsonify({"files": [public_excel_file(item) for item in excel_index.list_files()]})
+        metadata = archive_store.bom_file_metadata()
+        return jsonify({"files": [public_excel_file(item, metadata.get(item["id"], {})) for item in excel_index.list_files()]})
 
     @app.delete("/apps/excel-material-search/api/files")
     def delete_excel_files():
@@ -177,7 +180,7 @@ def register_routes(app, excel_index, archive_store, app_admins):
 
             try:
                 indexed_file = excel_index.index_workbook(original_name, payload)
-                archive_store.register_excel_file(indexed_file)
+                document = archive_store.register_excel_file(indexed_file)
             except ExcelIndexError as exc:
                 results.append(
                     {
@@ -189,7 +192,7 @@ def register_routes(app, excel_index, archive_store, app_admins):
                 continue
 
             ready_count += 1
-            results.append(public_excel_file(indexed_file))
+            results.append(public_excel_file(indexed_file, document))
 
         response_status = 201 if ready_count else 400
         return jsonify({"files": results}), response_status
