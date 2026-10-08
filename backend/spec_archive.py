@@ -159,7 +159,7 @@ class ArchiveStore:
         stored_name = f"{uuid4().hex}{suffix}"
         stored_path = self.storage_dir / stored_name
         try:
-            content_text = _extract_document_text(payload, suffix)
+            content_text = _sanitize_document_text(_extract_document_text(payload, suffix))
             stored_path.write_bytes(payload)
             now = datetime.now(timezone.utc).isoformat()
             title = _text(metadata.get("title")) or Path(safe_name).stem
@@ -314,7 +314,7 @@ class ArchiveStore:
                     content = _extract_document_text(
                         self._document_path(row).read_bytes(), f".{row['extension']}"
                     )
-                    content = content[: self.MAX_INDEX_CHARS]
+                    content = _sanitize_document_text(content)[: self.MAX_INDEX_CHARS]
                 except Exception as exc:
                     self._update_status(row["id"], "failed", str(exc))
                     continue
@@ -511,6 +511,14 @@ def parse_bom_filename(filename: str) -> dict[str, str]:
         "main_chip": identity.group(2).upper(),
         "board_name": versioned.group(0) if versioned else stem[:components_at] if components_at >= 0 else "",
     }
+
+
+def _sanitize_document_text(value: str) -> str:
+    # PDF font mappings can yield surrogate code points. Preserve valid pairs
+    # and replace lone surrogates and NULs, which cannot be stored in PostgreSQL.
+    return value.encode("utf-16-le", errors="surrogatepass").decode(
+        "utf-16-le", errors="replace"
+    ).replace("\x00", "\ufffd")
 
 
 def _extract_document_text(payload: bytes, suffix: str) -> str:

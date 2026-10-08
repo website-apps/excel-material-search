@@ -2,7 +2,8 @@
 import os
 from pathlib import Path
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend.app_admins import AppAdminStore
@@ -26,6 +27,19 @@ def create_app(storage=None, admin_config=None, secret=None):
     archive = ArchiveStore(storage / "archive.sqlite3", storage, excel_index)
     admins = AppAdminStore(Path(admin_config or "/app-config/app-admins.json"))
     register_routes(app, excel_index, archive, admins)
+
+    @app.errorhandler(HTTPException)
+    def api_error(error):
+        if not request.path.startswith(BASE + "/api/"):
+            return error
+        message = {
+            413: "单次上传内容不能超过 256 MB，请分批上传",
+            500: "资料服务处理失败，请稍后重试；如仍失败，请联系管理员查看服务日志",
+        }.get(error.code, error.description)
+        response = error.get_response()
+        response.data = app.json.dumps({"error": message})
+        response.content_type = "application/json"
+        return response
 
     @app.get("/health")
     def health():

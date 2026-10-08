@@ -8,6 +8,7 @@ from unittest.mock import patch
 from app import create_app, BASE
 from test_support import connect_sqlite
 from test_excel_index import workbook_bytes
+from test_spec_archive import malformed_unicode_pdf_bytes
 
 
 class ApplicationTests(unittest.TestCase):
@@ -67,3 +68,45 @@ class ApplicationTests(unittest.TestCase):
         for attempt in range(6):
             response = self.client.post(self.api + "/admin/login", json={"username": "tester", "password": "wrong"})
             self.assertEqual(response.status_code, 401 if attempt < 5 else 429)
+
+    def test_manual_upload_with_invalid_extracted_unicode_remains_searchable(self):
+        self.login()
+        original = malformed_unicode_pdf_bytes()
+        response = self.client.post(self.api + "/documents", data={"files": (io.BytesIO(original), "manual.pdf"), "kind": "manual"})
+        self.assertEqual(response.status_code, 201)
+        document = response.json["documents"][0]
+        matches = self.client.post(self.api + "/query", json={"kind": "manual", "query": "WPM3401 voltage"}).json["matches"]
+        self.assertEqual(matches[0]["document_id"], document["id"])
+        with self.client.get(self.api + f"/documents/{document['id']}/download") as response:
+            self.assertEqual(response.data, original)
+
+    def test_unexpected_upload_failure_returns_json_without_exception_details(self):
+        self.login()
+        with patch("backend.spec_archive.ArchiveStore.upload_document", side_effect=RuntimeError("private database details")):
+            with self.assertLogs(self.app.logger, level="ERROR") as logs:
+                response = self.client.post(self.api + "/documents", data={"files": (io.BytesIO(b"manual"), "manual.txt")})
+        self.assertEqual(response.status_code, 500)
+        self.assertTrue(response.is_json)
+        self.assertTrue(response.json["error"])
+        self.assertNotIn("private database details", response.get_data(as_text=True))
+        self.assertIn("private database details", "\n".join(logs.output))
+
+    def test_oversized_upload_returns_json(self):
+        self.login()
+        self.app.config["MAX_CONTENT_LENGTH"] = 64
+        response = self.client.post(self.api + "/documents", data={"files": (io.BytesIO(b"x" * 128), "manual.txt")})
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(response.is_json)
+        self.assertTrue(response.json["error"])
+
+    def test_api_http_errors_preserve_status_and_headers(self):
+        response = self.client.get(self.api + "/missing")
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(response.is_json)
+        response = self.client.patch(self.api + "/documents")
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(response.is_json)
+        self.assertIn("POST", response.headers["Allow"])
+        response = self.client.get(BASE + "/missing-page")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.mimetype, "text/html")

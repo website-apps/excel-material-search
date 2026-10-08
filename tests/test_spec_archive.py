@@ -2,8 +2,11 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from test_support import connect_sqlite
 import backend.excel_index as excel_module
@@ -13,6 +16,38 @@ archive_module.connect_database = connect_sqlite
 
 from backend.excel_index import ExcelIndexStore
 from backend.spec_archive import ArchiveStore
+
+
+def malformed_unicode_pdf_bytes() -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    cmap = DecodedStreamObject()
+    cmap.set_data(b"""/CIDInit /ProcSet findresource begin
+12 dict begin begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /BrokenUnicode def /CMapType 2 def
+1 begincodespacerange <00> <FF> endcodespacerange
+4 beginbfchar
+<41> <00570050004D0033003400300031>
+<42> <D800>
+<43> <0000>
+<44> <00200076006F006C0074006100670065>
+endbfchar endcmap CMapName currentdict /CMap defineresource pop end end""")
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+        NameObject("/ToUnicode"): writer._add_object(cmap),
+    })
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)}),
+    })
+    content = DecodedStreamObject()
+    content.set_data(b"BT /F1 12 Tf 10 100 Td (ABCD) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(content)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 class SpecArchiveStoreTests(unittest.TestCase):
@@ -71,6 +106,38 @@ class SpecArchiveStoreTests(unittest.TestCase):
         self.archive.delete_document(document["id"])
         self.assertEqual(self.excel_index.search("WPM3401"), [])
         self.assertEqual(self.archive.list_documents(kind="bom"), [])
+
+    def test_manual_upload_sanitizes_extracted_text_and_preserves_original(self) -> None:
+        extracted = "WPM3401 中文 µΩ 😀 \ud83d\ude00 \ud800 broken \udfff\x00 voltage"
+        expected = "WPM3401 中文 µΩ 😀 😀 � broken �� voltage"
+        original = b"original PDF bytes"
+        with patch("backend.spec_archive._extract_document_text", return_value=extracted):
+            document = self.archive.upload_document("manual.pdf", original, kind="manual")
+
+        self.assertEqual(document["status"], "ready")
+        self.assertEqual(self.archive._get_row(document["id"])["content_text"], expected)
+        matches = self.archive.query_documents("WPM3401 voltage", kind="manual")["matches"]
+        self.assertEqual(matches[0]["document_id"], document["id"])
+        with self.archive._connect() as connection:
+            indexed = connection.execute("SELECT content FROM archive_documents_fts").fetchone()[0]
+        self.assertIn(expected, indexed)
+        self.assertEqual(self.archive.document_path(document["id"])[1].read_bytes(), original)
+
+    def test_manual_reindex_sanitizes_extracted_text(self) -> None:
+        document = self.archive.upload_document("manual.txt", b"old content", kind="manual")
+        with patch("backend.spec_archive._extract_document_text", return_value="WPM3401 \ud800\x00 voltage"):
+            self.assertEqual(self.archive.reindex(), 1)
+
+        self.assertEqual(self.archive._get_row(document["id"])["content_text"], "WPM3401 �� voltage")
+        matches = self.archive.query_documents("WPM3401 voltage", kind="manual")["matches"]
+        self.assertEqual(matches[0]["document_id"], document["id"])
+
+    def test_text_upload_replaces_nul_without_changing_valid_unicode(self) -> None:
+        original = "中文 µΩ 😀\x00 WPM3401".encode("utf-8")
+        document = self.archive.upload_document("manual.txt", original, kind="manual")
+
+        self.assertEqual(self.archive._get_row(document["id"])["content_text"], "中文 µΩ 😀� WPM3401")
+        self.assertEqual(self.archive.document_path(document["id"])[1].read_bytes(), original)
 
     def test_archive_migrates_existing_excel_records_on_startup(self) -> None:
         indexed = self.excel_index.index_workbook("parts.xlsx", self._workbook_payload())
