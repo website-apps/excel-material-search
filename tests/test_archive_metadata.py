@@ -64,6 +64,7 @@ class ArchiveMetadataTests(unittest.TestCase):
         self.assertNotIn("warning", result)
         request = json.loads(call.call_args.args[0].data)
         self.assertGreaterEqual(request["max_output_tokens"], 4096)
+        self.assertEqual(request["reasoning"], {"effort": "none"})
 
     @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
     def test_incomplete_analysis_preserves_fallback_and_reports_warning(self):

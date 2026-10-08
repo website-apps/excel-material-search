@@ -39,6 +39,8 @@ def analyze_metadata(filename: str, text: str) -> dict[str, object]:
     instructions = (
         "从硬件文档正文提取元数据，仅输出一个合法 JSON 对象。字段固定为 title、category、package、vendor、intro。"
         "category 只能从以下列表选择，无法确认则填空字符串：" + "、".join(CATEGORIES) + "。"
+        "图像传感器芯片归传感器，完整摄像头模组归摄像头；仅摄像头驱动芯片归摄像头驱动芯片。"
+        "已明确为 LDO、DC-DC 或以太网 PHY 时优先使用对应的具体分类。"
         "title 优先填写器件主型号；package、vendor 仅在正文明确出现时填写；"
         "显示模组、摄像头模组和机械部件没有标准芯片封装时 package 留空，不把连接器或外形尺寸作为封装。"
         "缺失的信息直接留空，不推测；简介只需概括主要功能和少量明确参数。"
@@ -50,8 +52,8 @@ def analyze_metadata(filename: str, text: str) -> dict[str, object]:
         "input": [{"role": "system", "content": instructions},
                   {"role": "user", "content": f"文件名：{filename}\n正文：\n{text[:24000]}"}],
         "temperature": 0,
-        "reasoning": {"effort": "low"},
-        "max_output_tokens": 8192,
+        "reasoning": {"effort": "none"},
+        "max_output_tokens": 4096,
     }
     base_url = os.getenv("SPEC_ARCHIVE_AI_BASE_URL", "http://10.1.20.86:4000/v1").rstrip("/")
     request = Request(base_url + "/responses", data=json.dumps(body).encode("utf-8"),
