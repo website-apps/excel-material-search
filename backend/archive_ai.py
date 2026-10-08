@@ -6,6 +6,7 @@ import os
 from urllib.request import Request, urlopen
 
 from backend.archive_search import score_document
+from backend.archive_responses import final_response_text
 
 
 class ArchiveAIError(ValueError):
@@ -40,16 +41,14 @@ def ask_documents(archive, question: str) -> dict:
     body = {"model": model, "input": [
         {"role": "system", "content": [{"type": "input_text", "text": instructions}]},
         {"role": "user", "content": [{"type": "input_text", "text": question}]},
-    ], "temperature": .2, "max_output_tokens": 1200}
+    ], "temperature": .2, "reasoning": {"effort": "low"}, "max_output_tokens": 6144}
     base = os.getenv("SPEC_ARCHIVE_AI_BASE_URL", "http://10.1.20.86:4000/v1").rstrip("/")
     request = Request(base + "/responses", data=json.dumps(body).encode(),
                       headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
     try:
         with urlopen(request, timeout=45) as response:
             payload = json.load(response)
-        answer = payload.get("output_text") or "\n".join(
-            part.get("text", "") for item in payload.get("output", []) for part in item.get("content", [])
-            if part.get("type") == "output_text")
+        answer = final_response_text(payload)
         if not isinstance(answer, str) or not answer.strip():
             raise ArchiveAIError("AI 服务未返回答案，请稍后重试")
         return {"answer": answer.strip(), "sources": sources, "model": model}

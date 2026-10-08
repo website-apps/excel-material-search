@@ -128,3 +128,18 @@ class V03Tests(unittest.TestCase):
         self.assertEqual(len(self.client.get(self.api + "/v03/files?kind=bom&q=ABC123").json["files"]), 1)
         with self.client.get(path + "/download") as response:
             self.assertEqual(response.data, payload)
+
+    @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
+    def test_ai_returns_only_final_answer_and_rejects_truncation(self):
+        payload = {"status": "completed", "output": [
+            {"type": "reasoning", "content": [{"type": "output_text", "text": "private model planning"}]},
+            {"type": "message", "content": [{"type": "output_text", "text": "无法从现有资料确认。"}]}
+        ]}
+        with patch("backend.archive_ai.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = self.client.post(self.api + "/v03/ask", json={"question": "ABC123"})
+        self.assertEqual(result.json["answer"], "无法从现有资料确认。")
+        self.assertNotIn("private model planning", result.get_data(as_text=True))
+        payload["status"] = "incomplete"
+        with patch("backend.archive_ai.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = self.client.post(self.api + "/v03/ask", json={"question": "ABC123"})
+        self.assertEqual(result.status_code, 502)

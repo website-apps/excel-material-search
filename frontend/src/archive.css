@@ -154,3 +154,10 @@ header { gap:20px; flex-wrap:wrap; box-shadow:none; }
   .floating-panel { width:calc(100% - 24px); right:12px; bottom:12px; height:80dvh; max-height:80dvh; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
+
+.file-attributes { display:flex; flex-wrap:wrap; column-gap:20px; row-gap:3px; }
+.meta-field { min-width:0; overflow-wrap:anywhere; }
+.meta-label { color:var(--muted); }
+.file-meta { color:var(--text); }
+.file-summary { margin-top:4px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.metadata-empty { color:var(--muted); }

@@ -184,6 +184,24 @@
     refreshFilterOptions().then(loadFiles);
   }
 
+  function metadataValue(value) {
+    const text = String(value ?? '').trim();
+    return /^[-—–]+$/.test(text) ? '' : text;
+  }
+
+  function renderMetadata(file) {
+    const fields = file.kind === 'bom'
+      ? [['板型', file.board_type ? `${file.board_code ? file.board_code + ' · ' : ''}${file.board_type}` : file.board_code],
+         ['主芯片', file.main_chip], ['板卡', file.board_name]]
+      : [['厂商', file.vendor], ['封装', file.package]];
+    const attributes = fields.filter(([, value]) => metadataValue(value)).map(([label, value]) =>
+      `<span class="meta-field"><span class="meta-label">${label}：</span>${highlightTerms(metadataValue(value))}</span>`).join('');
+    const note = file.kind === 'bom' ? '' : metadataValue(file.note) || metadataValue(file.keywords);
+    const summary = note ? `<div class="file-summary" title="${escapeHtml(note)}"><span class="meta-label">简介：</span>${highlightTerms(note)}</div>` : '';
+    if (!attributes && !summary) return `<span class="metadata-empty">${file.kind === 'bom' ? '板型与主芯片未填写' : '资料信息待补充'}</span>`;
+    return `${attributes ? `<div class="file-attributes">${attributes}</div>` : ''}${summary}`;
+  }
+
   function renderFiles() {
     const container = document.getElementById('fileList');
     document.getElementById('resultCount').textContent = '共 ' + files.length + ' 个文件';
@@ -196,9 +214,7 @@
     const order = categories.filter(c => grouped[c]).concat(Object.keys(grouped).filter(c => !categories.includes(c)));
     container.innerHTML = order.map(c => {
       const items = grouped[c].map(f => {
-        const details = f.kind === 'bom'
-          ? `\u003cspan class="badge"\u003e${highlightTerms(f.board_code ? `${f.board_code} · ${f.board_type}` : (f.board_type || '未识别板型'))}\u003c/span\u003e\u003cspan class="badge"\u003e${highlightTerms(f.main_chip || '未识别主芯片')}\u003c/span\u003e\u003cspan style="color:#ccc;margin:0 4px"\u003e|\u003c/span\u003e${highlightTerms(f.board_name || '未识别板卡名称')}`
-          : `\u003cspan class="badge"\u003e${highlightTerms(f.category)}\u003c/span\u003e\u003cspan class="badge"\u003e${highlightTerms(f.vendor || '—')}\u003c/span\u003e\u003cspan class="badge"\u003e${highlightTerms(f.package || '—')}\u003c/span\u003e\u003cspan style="color:#ccc;margin:0 4px"\u003e|\u003c/span\u003e${highlightTerms(f.note || f.keywords || '—')}`;
+        const details = renderMetadata(f);
         return `
         \u003cdiv class="file-item"\u003e
           \u003cdiv class="file-info"\u003e
@@ -254,7 +270,7 @@
     [/\bsot-89\b/, 'SOT-89'], [/\bdfn\b/, 'DFN'], [/\blga\b/, 'LGA']
   ];
   function inferPackage(name) { const n = name.toLowerCase(); for (const [re, pkg] of packagePatterns) if (re.test(n)) return pkg; return ''; }
-  function normalizePackageInput(input) { return input ? input.trim().toUpperCase().replace(/\s+/g, '-') : ''; }
+  function normalizePackageInput(input) { return String(input || '').split(/[,，;；/]+/).map(part => part.trim().toUpperCase().replace(/\s+/g, '-')).filter(Boolean).join(' / '); }
 
   function buildPendingFile(file) {
     const name = file.name;
@@ -338,7 +354,7 @@
           const fields = { title: 'title', category: 'category', package: 'package', vendor: 'vendor', intro: 'note' };
           Object.entries(fields).forEach(([key, field]) => { if (pf[field] !== initial[field]) delete extracted[key]; });
           applyExtractedMetadata(pf, extracted);
-          if (Object.keys(data.metadata || {}).length) analyzed++;
+          if (!data.warning && Object.keys(data.metadata || {}).length) analyzed++;
           if (currentPendingIndex === index) renderPendingEditor();
         } catch (error) {
           console.warn('Metadata analysis failed for ' + pf.file.name, error);
@@ -352,8 +368,8 @@
     await Promise.all(Array.from({ length: Math.min(2, total) }, worker));
     if (generation !== analysisGeneration) return;
     analysisInProgress = false;
-    setProgress('解析完成', total, total);
-    toast(analyzed ? `已从正文自动填写 ${analyzed} 个文件的信息，请确认后上传` : '未能自动提取信息，已保留文件名推断结果');
+    setProgress(analyzed === total ? '解析完成' : `解析完成，${total - analyzed} 个文件需补充信息`, total, total);
+    toast(analyzed === total ? `已从正文自动填写 ${analyzed} 个文件的信息，请确认后上传` : `已提取 ${analyzed} 个文件；${total - analyzed} 个未提取成功，请检查并补充信息`);
   }
 
   function renderPendingEditor() {

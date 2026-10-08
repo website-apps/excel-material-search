@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const html = readFileSync('index.html', 'utf8');
@@ -106,4 +105,36 @@ describe('V0.3 document library', () => {
         await win.simulateUpload();
         expect(document.getElementById('selectedFiles').textContent).toContain('1 个文件上传失败');
     });
+    it('identifies vendor, package and summary instead of showing unlabeled badges', () => {
+        const metadata = document.querySelector('.file-meta');
+        expect(metadata.textContent).toContain('厂商：TI');
+        expect(metadata.textContent).toContain('封装：QFN');
+        expect(metadata.textContent).toContain('简介：3 A');
+        expect(metadata.querySelectorAll('.badge').length).toBe(0);
+    });
+    it('hides empty metadata placeholders and keeps a clear empty state', async () => {
+        documents = [{ ...sample, category: '未分类', vendor: '—', package: '', note: '—' }];
+        win.setLibraryKind('manual');
+        await vi.waitFor(() => expect(document.querySelector('.file-meta').textContent).toBe('资料信息待补充'));
+        expect(document.querySelector('.file-meta').textContent).not.toContain('—');
+        expect(document.querySelector('.file-meta').textContent).not.toContain('|');
+    });
+    it('shows board labels and one clear message for missing BOM metadata', async () => {
+        documents = [{ ...sample, kind: 'bom', category: 'BOM', board_code: 'PD', board_type: '产品板', main_chip: 'X2000' }];
+        win.setLibraryKind('bom');
+        await vi.waitFor(() => expect(document.querySelector('.file-meta').textContent).toContain('主芯片：X2000'));
+        expect(document.querySelector('.file-meta').textContent).toContain('板型：PD · 产品板');
+        documents = [{ ...sample, kind: 'bom', category: 'BOM', board_code: '', main_chip: '' }];
+        win.setLibraryKind('bom');
+        await vi.waitFor(() => expect(document.querySelector('.file-meta').textContent).toBe('板型与主芯片未填写'));
+    });
+
+    it('does not call filename fallback a successful content extraction', async () => {
+        await login();
+        analyze = () => response({ metadata: { title: 'Filename fallback' }, warning: '未能提取正文' });
+        await chooseFile();
+        await vi.waitFor(() => expect(document.getElementById('progressLabel').textContent).toContain('1 个文件需补充信息'));
+        expect(document.getElementById('toast').textContent).toContain('1 个未提取成功');
+    });
+
 });

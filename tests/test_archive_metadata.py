@@ -3,6 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+from backend.archive_responses import final_response_text
 from backend.archive_metadata import analyze_metadata, infer_filename_metadata
 from backend.archive_search import query_matches, score_document
 
@@ -24,10 +25,10 @@ class ArchiveMetadataTests(unittest.TestCase):
     @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
     def test_ai_metadata_uses_content_and_validates_categories(self):
         output = {"title": "ABC123", "category": "DC-DC", "package": "qfn 16", "vendor": "TI", "intro": ["5 V", "3 A"]}
-        response = io.BytesIO(json.dumps({"output": [{"content": [{"type": "output_text", "text": json.dumps(output)}]}]}).encode())
+        response = io.BytesIO(json.dumps({"output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps(output)}]}]}).encode())
         with patch("backend.archive_metadata.urlopen", return_value=response) as call:
             result = analyze_metadata("original.pdf", "ABC123 output voltage 5V")
-        self.assertEqual(result["metadata"]["note"], "5 V, 3 A")
+        self.assertEqual(result["metadata"]["note"], "5 V；3 A")
         self.assertEqual(result["metadata"]["package"], "QFN-16")
         self.assertIn("ABC123 output voltage", json.loads(call.call_args.args[0].data)["input"][1]["content"])
 
@@ -43,3 +44,39 @@ class ArchiveMetadataTests(unittest.TestCase):
         self.assertTrue(query_matches("abc output current 3a", "ABC，输出电流"))
         self.assertFalse(query_matches("abc output current 3a", "ABC 5v"))
         self.assertGreater(score_document("abc output current 3a", "ABC 带载能力"), 0)
+
+    def test_response_parser_excludes_reasoning_and_incomplete_content(self):
+        reasoning = {"type": "reasoning", "content": [{"type": "output_text", "text": "internal planning"}]}
+        message = {"type": "message", "content": [{"type": "output_text", "text": "final answer"}]}
+        self.assertEqual(final_response_text({"output": [reasoning, message]}), "final answer")
+        self.assertEqual(final_response_text({"output": [reasoning], "output_text": "internal planning"}), "")
+        self.assertEqual(final_response_text({"status": "incomplete", "output": [message]}), "")
+
+    @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
+    def test_realistic_long_document_extraction_only_uses_final_json(self):
+        payload = {"status": "completed", "output": [
+            {"type": "reasoning", "content": [{"type": "output_text", "text": '{"category":"错误分类"}'}]},
+            {"type": "message", "content": [{"type": "output_text", "text": '{"title":"ETA5350","category":"LDO","intro":["低压差线性稳压器"]}'}]}
+        ]}
+        with patch("backend.archive_metadata.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())) as call:
+            result = analyze_metadata("ETA5350.pdf", "Long datasheet content " * 1000)
+        self.assertEqual(result["metadata"]["category"], "LDO")
+        self.assertNotIn("warning", result)
+        request = json.loads(call.call_args.args[0].data)
+        self.assertGreaterEqual(request["max_output_tokens"], 4096)
+
+    @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
+    def test_incomplete_analysis_preserves_fallback_and_reports_warning(self):
+        payload = {"status": "incomplete", "output": [
+            {"type": "reasoning", "content": [{"type": "output_text", "text": '{"category":"LDO"}'}]}
+        ]}
+        with patch("backend.archive_metadata.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
+            result = analyze_metadata("buck.txt", "datasheet body")
+        self.assertEqual(result["metadata"]["category"], "电源管理")
+        self.assertIn("warning", result)
+
+    @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": "test-only"})
+    def test_multiple_packages_preserve_readable_separators(self):
+        response = io.BytesIO(json.dumps({"output_text": '{"package":"SO-8, MSOP-8"}'}).encode())
+        with patch("backend.archive_metadata.urlopen", return_value=response):
+            self.assertEqual(analyze_metadata("ref.pdf", "body")["metadata"]["package"], "SO-8 / MSOP-8")
