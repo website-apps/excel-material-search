@@ -132,6 +132,7 @@ describe('V0.3 document library', () => {
         expect(document.getElementById('chipManagerError').textContent).toContain('已存在');
         expect(document.getElementById('chipManagerError').hidden).toBe(false);
         expect(mainChipNames).toEqual(['X4000']);
+        expect(document.activeElement).toBe(document.getElementById('newMainChip'));
         document.getElementById('chipManagerModal').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         expect(document.getElementById('chipManagerModal').classList.contains('show')).toBe(false);
         expect(document.activeElement).toBe(document.getElementById('manageChipsButton'));

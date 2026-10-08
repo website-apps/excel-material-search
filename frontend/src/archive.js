@@ -255,6 +255,7 @@
     if (!name) { chipManagerError('请输入主控芯片型号'); return; }
     chipMutationInProgress = true;
     const button = document.getElementById('addMainChipButton');
+    input.focus();
     button.disabled = true;
     button.textContent = '正在添加…';
     chipManagerError('');
@@ -262,7 +263,7 @@
       await responseData(await fetch(apiUrl('/main-chips'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name })
       }));
-      input.value = '';
+      if (input.value.trim().toUpperCase() === name) input.value = '';
       await loadMainChips();
       refreshMainChipFilter();
       renderChipCatalog();
@@ -275,6 +276,7 @@
   async function removeMainChip(name, button) {
     if (!requireAdminUI() || chipMutationInProgress) return;
     chipMutationInProgress = true;
+    document.getElementById('newMainChip').focus();
     button.disabled = true;
     chipManagerError('');
     try {
