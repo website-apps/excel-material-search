@@ -165,3 +165,26 @@ header { gap:20px; flex-wrap:wrap; box-shadow:none; }
 .file-context { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; font-size:12px; color:var(--muted); }
 .file-category { color:var(--accent); }
 .file-context time { font-variant-numeric:tabular-nums; }
+.library-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.library-toolbar .library-tabs { margin-bottom:0; }
+.chip-manager-trigger { padding:8px 12px; font-size:13px; }
+.chip-manager-modal { max-width:560px; }
+.chip-manager-intro,.chip-manager-help { margin:0; font-size:13px; line-height:1.7; color:var(--muted); }
+.chip-add-form { display:flex; align-items:flex-end; gap:10px; margin:20px 0; }
+.chip-add-form .field { flex:1; margin:0; }
+.chip-add-form input { width:100%; }
+.chip-add-form .btn { min-height:44px; flex-shrink:0; }
+.chip-manager-error { padding:10px 12px; color:#a52d2d; background:#fff2f0; border-radius:8px; font-size:13px; line-height:1.6; }
+.chip-list-heading { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; font-size:12px; color:var(--muted); }
+.chip-catalog { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.chip-catalog-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; }
+.chip-catalog-row + .chip-catalog-row { border-top:1px solid var(--border); }
+.chip-catalog-info { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.chip-catalog-info strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.chip-catalog-info span,.chip-in-use { font-size:12px; color:var(--muted); }
+.chip-in-use { flex-shrink:0; }
+.chip-remove { flex-shrink:0; padding:6px 10px; color:var(--muted); background:transparent; border:1px solid var(--border); border-radius:6px; cursor:pointer; font:12px var(--sans); }
+.chip-remove:hover { color:var(--danger); border-color:var(--danger); }
+.chip-remove:disabled { cursor:wait; opacity:.6; }
+.chip-manager-help { margin-top:12px; font-size:12px; }
+@media(max-width:400px) { .chip-add-form { flex-wrap:wrap; } .chip-add-form .field { flex-basis:100%; } .chip-add-form .btn { width:100%; justify-content:center; } }

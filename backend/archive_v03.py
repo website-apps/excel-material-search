@@ -53,6 +53,28 @@ def register_archive_v03(app, archive, admins, prefix="/apps/excel-material-sear
         name, payload = uploaded_file(20 * 1024 * 1024)
         return analysis_response(archive.analyze_upload(name, payload))
 
+    @api.get("/main-chips")
+    def main_chips():
+        return jsonify(chips=archive.list_main_chips())
+
+    @api.post("/main-chips")
+    @admin_only
+    def add_main_chip():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("name"), str):
+            return jsonify(error="请输入主控芯片型号"), 400
+        chip = archive.add_main_chip(body["name"])
+        if chip is None:
+            return jsonify(error="该型号已存在，无需重复添加"), 409
+        return jsonify(chip=chip), 201
+
+    @api.delete("/main-chips/<path:name>")
+    @admin_only
+    def delete_main_chip(name):
+        if not archive.delete_main_chip(name):
+            return jsonify(error="未找到该型号"), 404
+        return jsonify(ok=True)
+
     def analysis_response(result):
         metadata = dict(result["metadata"])
         metadata["intro"] = metadata.get("note", "")

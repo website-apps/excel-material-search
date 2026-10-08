@@ -26,6 +26,8 @@
   let editingFileId = null;
   let listRequest = 0;
   let analysisGeneration = 0;
+  let mainChips = [];
+  let chipMutationInProgress = false;
 
   function escapeHtml(str) {
     return String(str).replace(/[\u0026\u003c\u003e"']/g, m => ({'\u0026':'\u0026amp;','\u003c':'\u0026lt;','\u003e':'\u0026gt;','"':'\u0026quot;',"'":'\u0026#39;'}[m]));
@@ -72,6 +74,7 @@
     document.body.classList.toggle('is-admin', isAdmin);
     document.getElementById('manualUploadButton').hidden = !isAdmin;
     document.getElementById('bomUploadButton').hidden = !isAdmin;
+    document.getElementById('manageChipsButton').hidden = !isAdmin || activeKind !== 'bom';
     const button = document.getElementById('adminButton');
     button.textContent = isAdmin ? '退出管理员' : '管理员登录';
     button.className = isAdmin ? 'btn btn-primary' : 'btn btn-ghost';
@@ -118,14 +121,34 @@
     select.appendChild(option);
   }
 
+  async function loadMainChips() {
+    const data = await responseData(await fetch(apiUrl('/main-chips')));
+    mainChips = data.chips || [];
+    const suggestions = document.getElementById('mainChipOptions');
+    suggestions.replaceChildren();
+    mainChips.forEach(chip => {
+      const option = document.createElement('option');
+      option.value = chip.name;
+      suggestions.appendChild(option);
+    });
+  }
+
+  function refreshMainChipFilter() {
+    if (activeKind !== 'bom') return;
+    const selected = document.getElementById('filterVendor').value;
+    setFilterOptions('filterVendor', '所有主芯片', mainChips.map(chip => chip.name));
+    addOtherFilterOption('filterVendor');
+    if (selected === '__other__') document.getElementById('filterVendor').value = '__other__';
+  }
+
   async function refreshFilterOptions() {
     try {
       const kind = activeKind;
       const selectedCategory = document.getElementById('filterCategory').value;
-      const selectedVendor = document.getElementById('filterVendor').value;
       const res = await fetch(apiUrl('/files?kind=' + kind));
       if (!res.ok) await responseData(res);
       const data = await responseData(res);
+      if (kind === 'bom') await loadMainChips();
       if (kind !== activeKind) return;
       const allFiles = data.files || [];
       const unique = values => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
@@ -133,11 +156,9 @@
         const boardTypes = { RD: '开发板', PD: '产品板', DB: '验证板' };
         setFilterOptions('filterCategory', '所有板型', unique(allFiles.map(file => file.board_code)),
           code => boardTypes[code] ? `${code} · ${boardTypes[code]}` : code);
-        setFilterOptions('filterVendor', '所有主芯片', unique(allFiles.map(file => file.main_chip)));
+        refreshMainChipFilter();
         addOtherFilterOption('filterCategory');
-        addOtherFilterOption('filterVendor');
         if (selectedCategory === '__other__') document.getElementById('filterCategory').value = '__other__';
-        if (selectedVendor === '__other__') document.getElementById('filterVendor').value = '__other__';
       } else {
         setFilterOptions('filterCategory', '所有分类', unique(allFiles.map(file => file.category)));
         setFilterOptions('filterVendor', '所有厂商', unique(allFiles.map(file => file.vendor).filter(vendor => vendor !== '—')));
@@ -179,12 +200,92 @@
 
   function setLibraryKind(kind) {
     activeKind = kind;
+    updateAdminUI();
     listRequest++;
     document.querySelectorAll('.library-tab').forEach(button => button.classList.toggle('active', button.dataset.kind === kind));
     document.getElementById('searchInput').value = '';
     document.getElementById('filterCategory').value = '';
     document.getElementById('filterVendor').value = '';
-    refreshFilterOptions().then(loadFiles);
+    return refreshFilterOptions().then(loadFiles);
+  }
+
+  function chipManagerError(message) {
+    const error = document.getElementById('chipManagerError');
+    error.textContent = message;
+    error.hidden = !message;
+  }
+
+  function renderChipCatalog() {
+    document.getElementById('chipCatalogCount').textContent = `${mainChips.length} 个型号`;
+    document.getElementById('chipCatalogList').innerHTML = mainChips.length ? mainChips.map(chip => `
+      <div class="chip-catalog-row">
+        <div class="chip-catalog-info"><strong>${escapeHtml(chip.name)}</strong><span>${chip.bom_count ? `${chip.bom_count} 份 BOM` : '尚未关联 BOM'}</span></div>
+        ${chip.bom_count ? '<span class="chip-in-use">使用中</span>' : `<button type="button" class="chip-remove" data-chip="${escapeHtml(chip.name)}" aria-label="移除 ${escapeHtml(chip.name)}">移除</button>`}
+      </div>`).join('') : '<div class="no-match">暂无型号，可以先添加，也可以上传 BOM 后自动识别。</div>';
+  }
+
+  async function openChipManager() {
+    if (!requireAdminUI()) return;
+    chipManagerError('');
+    document.getElementById('newMainChip').value = '';
+    document.getElementById('chipManagerModal').classList.add('show');
+    document.getElementById('chipCatalogCount').textContent = '正在加载…';
+    try {
+      await loadMainChips();
+      renderChipCatalog();
+      refreshMainChipFilter();
+      if (document.getElementById('chipManagerModal').classList.contains('show')) document.getElementById('newMainChip').focus();
+    } catch (error) {
+      document.getElementById('chipCatalogCount').textContent = '加载失败';
+      chipManagerError(error.message);
+    }
+  }
+
+  function closeChipManager(event) {
+    if (event && event.target !== document.getElementById('chipManagerModal')) return;
+    document.getElementById('chipManagerModal').classList.remove('show');
+    document.getElementById('manageChipsButton').focus();
+  }
+
+  async function addMainChip(event) {
+    if (event) event.preventDefault();
+    if (!requireAdminUI() || chipMutationInProgress) return;
+    const input = document.getElementById('newMainChip');
+    const name = input.value.trim().toUpperCase();
+    if (!name) { chipManagerError('请输入主控芯片型号'); return; }
+    chipMutationInProgress = true;
+    const button = document.getElementById('addMainChipButton');
+    button.disabled = true;
+    button.textContent = '正在添加…';
+    chipManagerError('');
+    try {
+      await responseData(await fetch(apiUrl('/main-chips'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name })
+      }));
+      input.value = '';
+      await loadMainChips();
+      refreshMainChipFilter();
+      renderChipCatalog();
+      toast(`已添加型号 ${name}`);
+      input.focus();
+    } catch (error) { chipManagerError(error.message); }
+    finally { chipMutationInProgress = false; button.disabled = false; button.textContent = '添加型号'; }
+  }
+
+  async function removeMainChip(name, button) {
+    if (!requireAdminUI() || chipMutationInProgress) return;
+    chipMutationInProgress = true;
+    button.disabled = true;
+    chipManagerError('');
+    try {
+      await responseData(await fetch(apiUrl('/main-chips/' + encodeURIComponent(name)), { method: 'DELETE' }));
+      await loadMainChips();
+      refreshMainChipFilter();
+      renderChipCatalog();
+      await loadFiles();
+      toast(`已移除型号 ${name}`);
+    } catch (error) { chipManagerError(error.message); button.disabled = false; }
+    finally { chipMutationInProgress = false; }
   }
 
   function metadataValue(value) {
@@ -478,7 +579,7 @@
 
   async function logoutAdmin() {
     await fetch(apiUrl('/auth/logout'), { method: 'POST' });
-    isAdmin = false; updateAdminUI(); renderFiles(); toast('已退出管理员');
+    isAdmin = false; closeChipManager(); updateAdminUI(); renderFiles(); toast('已退出管理员');
   }
 
   function editFile(id) {
@@ -688,6 +789,19 @@
   document.getElementById('searchInput').addEventListener('input', debounce(loadFiles, 250));
   ['filterCategory','filterVendor','sortOrder'].forEach(id => document.getElementById(id).addEventListener('change', loadFiles));
   document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') askAI(); });
+  document.getElementById('chipCatalogList').addEventListener('click', event => {
+    const button = event.target.closest('button[data-chip]');
+    if (button) removeMainChip(button.dataset.chip, button);
+  });
+  document.getElementById('chipManagerModal').addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeChipManager();
+    if (event.key === 'Tab') {
+      const controls = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled)')];
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
   const dz = document.getElementById('dropzone');
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
@@ -703,6 +817,7 @@
   window.previewFile = previewFile; window.renderBomSheet = renderBomSheet; window.deleteFile = deleteFile; window.setLibraryKind = setLibraryKind;
   window.openAdminModal = openAdminModal; window.closeAdminModal = closeAdminModal; window.loginAdmin = loginAdmin;
   window.editFile = editFile; window.closeEditModal = closeEditModal; window.closeBomEditModal = closeBomEditModal; window.saveEditFile = saveEditFile;
+  window.openChipManager = openChipManager; window.closeChipManager = closeChipManager; window.addMainChip = addMainChip;
 
   loadAuthStatus().then(() => refreshFilterOptions().then(loadFiles));
 })();

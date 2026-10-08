@@ -87,6 +87,44 @@ class V03Tests(unittest.TestCase):
         self.assertEqual([file["id"] for file in visitor.get(url + "&sort=oldest").json["files"]], [old["id"], new["id"]])
         self.assertEqual(visitor.get(url + "&sort=invalid").status_code, 422)
 
+    def test_main_chip_catalog_public_read_and_admin_write_permissions(self):
+        url = self.api + "/v03/main-chips"
+        self.assertEqual(self.client.get(url).json, {"chips": []})
+        self.assertEqual(self.client.post(url, json={"name": "X4000"}).status_code, 401)
+        self.assertEqual(self.client.delete(url + "/X4000").status_code, 401)
+        self.login()
+        added = self.client.post(url, json={"name": " x4000 "})
+        self.assertEqual(added.status_code, 201)
+        self.assertEqual(added.json["chip"], {"name": "X4000", "bom_count": 0})
+        visitor = self.app.test_client()
+        self.assertEqual(visitor.get(url).json["chips"], [{"name": "X4000", "bom_count": 0}])
+        self.assertEqual(self.client.post(url, json={"name": "x4000"}).status_code, 409)
+        bom = self.upload("DB_X2600_TEST.xlsx", workbook_bytes(), kind="bom").json["file"]
+        self.assertEqual(self.client.post(url, json={"name": "x2600"}).status_code, 409)
+        self.assertEqual(self.client.delete(url + "/X2600").status_code, 422)
+        self.client.put(self.api + f"/v03/files/{bom['id']}", json={"main_chip": "X4000"})
+        self.assertEqual(visitor.get(url).json["chips"], [{"name": "X4000", "bom_count": 1}])
+        self.assertEqual(len(visitor.get(self.api + "/v03/files?kind=bom&main_chip=X4000").json["files"]), 1)
+        self.assertEqual(self.client.delete(url + "/X4000").status_code, 422)
+        self.client.put(self.api + f"/v03/files/{bom['id']}", json={"main_chip": "X2600"})
+        self.assertEqual(self.client.delete(url + "/X4000").status_code, 200)
+        self.assertEqual(self.client.delete(url + "/X4000").status_code, 404)
+        self.client.post(self.api + "/admin/logout")
+        self.assertEqual(self.client.post(url, json={"name": "X5000"}).status_code, 401)
+        self.assertEqual(self.client.delete(url + "/X2600").status_code, 401)
+
+    def test_main_chip_catalog_rejects_invalid_names_and_accepts_part_punctuation(self):
+        self.login()
+        url = self.api + "/v03/main-chips"
+        for body in ([], {}, {"name": None}, {"name": 123}):
+            with self.subTest(body=body):
+                self.assertEqual(self.client.post(url, json=body).status_code, 400)
+        for name in ("", " ", "bad model", "<img>", "X" * 81):
+            with self.subTest(name=name):
+                self.assertEqual(self.client.post(url, json={"name": name}).status_code, 422)
+        self.assertEqual(self.client.post(url, json={"name": "STM32H7/V2.1+PRO"}).status_code, 201)
+        self.assertEqual(self.client.delete(url + "/STM32H7%2FV2.1%2BPRO").status_code, 200)
+
     @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": ""})
     def test_analyze_does_not_store_files_and_keeps_fallback(self):
         self.login()

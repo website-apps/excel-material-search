@@ -15,7 +15,7 @@ excel_module.connect_database = connect_sqlite
 archive_module.connect_database = connect_sqlite
 
 from backend.excel_index import ExcelIndexStore
-from backend.spec_archive import ArchiveStore, parse_bom_filename
+from backend.spec_archive import ArchiveError, ArchiveStore, parse_bom_filename
 
 
 def malformed_unicode_pdf_bytes() -> bytes:
@@ -158,6 +158,41 @@ class SpecArchiveStoreTests(unittest.TestCase):
                     "board_code": "DB", "board_type": "验证板", "main_chip": chip, "board_name": board_name,
                 })
         self.assertEqual(parse_bom_filename("CUSTOM_X2000_DEMO.xlsx")["board_code"], "")
+
+    def test_main_chip_catalog_persists_and_merges_bom_models(self) -> None:
+        self.assertEqual(self.archive.add_main_chip(" am62a7-q1 "), {"name": "AM62A7-Q1", "bom_count": 0})
+        self.assertIsNone(self.archive.add_main_chip("AM62A7-Q1"))
+        self.archive.upload_document("DB_X2600_TEST_V1.0.xlsx", self._workbook_payload(), kind="bom")
+        self.assertIsNone(self.archive.add_main_chip("x2600"))
+        manual = self.archive.upload_document("manual.txt", b"manual", kind="manual")
+        self.archive.update_document(manual["id"], {"main_chip": "MANUAL-ONLY"})
+        restarted = ArchiveStore(self.archive.db_file, self.archive.storage_dir, self.excel_index)
+        self.assertEqual(restarted.list_main_chips(), [
+            {"name": "AM62A7-Q1", "bom_count": 0}, {"name": "X2600", "bom_count": 1},
+        ])
+        with self.assertRaisesRegex(ArchiveError, "已被 BOM 使用"):
+            restarted.delete_main_chip("X2600")
+        self.assertTrue(restarted.delete_main_chip("am62a7-q1"))
+        self.assertFalse(restarted.delete_main_chip("AM62A7-Q1"))
+        self.assertEqual(restarted.list_main_chips(), [{"name": "X2600", "bom_count": 1}])
+
+    def test_main_chip_catalog_counts_follow_document_edits_and_deletion(self) -> None:
+        self.archive.add_main_chip("X4000")
+        bom = self.archive.upload_document("DB_X2600_TEST.xlsx", self._workbook_payload(), kind="bom")
+        self.archive.update_document(bom["id"], {"main_chip": "x4000"})
+        self.assertEqual(self.archive.list_main_chips(), [{"name": "X4000", "bom_count": 1}])
+        with self.assertRaisesRegex(ArchiveError, "已被 BOM 使用"):
+            self.archive.delete_main_chip("X4000")
+        self.archive.delete_document(bom["id"])
+        self.assertEqual(self.archive.list_main_chips(), [{"name": "X4000", "bom_count": 0}])
+        self.assertTrue(self.archive.delete_main_chip("X4000"))
+
+    def test_main_chip_names_are_validated_without_truncation(self) -> None:
+        for name in ("", " ", "X 4000", "X\n4000", "<script>", "X" * 81, None):
+            with self.subTest(name=name), self.assertRaises(ArchiveError):
+                self.archive.add_main_chip(name)
+        self.assertEqual(self.archive.list_main_chips(), [])
+        self.assertEqual(self.archive.add_main_chip("STM32H7/V2.1+PRO")['name'], "STM32H7/V2.1+PRO")
 
     def test_time_sort_uses_bom_modification_time_and_manual_upload_time(self) -> None:
         records = [

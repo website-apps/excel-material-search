@@ -78,6 +78,11 @@ class ArchiveStore:
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS archive_documents_fts
                     USING fts5(document_id UNINDEXED, content, tokenize='trigram');
+
+                CREATE TABLE IF NOT EXISTS archive_main_chips (
+                    name TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
         self._migrate_existing_excel_files()
@@ -109,6 +114,42 @@ class ArchiveStore:
                 "SELECT excel_file_id, board_code, main_chip FROM archive_documents WHERE kind = 'bom'"
             ).fetchall()
         return {row["excel_file_id"]: dict(row) for row in rows if row["excel_file_id"] is not None}
+
+    def list_main_chips(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            names = {row["name"] for row in connection.execute("SELECT name FROM archive_main_chips")}
+            counts = {row["name"]: row["bom_count"] for row in connection.execute(
+                "SELECT UPPER(TRIM(main_chip)) AS name, COUNT(*) AS bom_count FROM archive_documents "
+                "WHERE kind = 'bom' AND TRIM(main_chip) <> '' GROUP BY UPPER(TRIM(main_chip))"
+            )}
+        return [{"name": name, "bom_count": counts.get(name, 0)} for name in sorted(names | counts.keys())]
+
+    def add_main_chip(self, name: str) -> dict[str, Any] | None:
+        name = _normalize_main_chip(name)
+        with self._connect() as connection:
+            used = connection.execute(
+                "SELECT 1 FROM archive_documents WHERE kind = 'bom' AND UPPER(TRIM(main_chip)) = ? LIMIT 1", (name,)
+            ).fetchone()
+            if used:
+                return None
+            inserted = connection.execute(
+                "INSERT OR IGNORE INTO archive_main_chips (name, created_at) VALUES (?, ?)",
+                (name, datetime.now(timezone.utc).isoformat()),
+            )
+            if not inserted.rowcount:
+                return None
+        return {"name": name, "bom_count": 0}
+
+    def delete_main_chip(self, name: str) -> bool:
+        name = _normalize_main_chip(name)
+        with self._connect() as connection:
+            used = connection.execute(
+                "SELECT 1 FROM archive_documents WHERE kind = 'bom' AND UPPER(TRIM(main_chip)) = ? LIMIT 1", (name,)
+            ).fetchone()
+            if used:
+                raise ArchiveError("该型号已被 BOM 使用，请先修改对应 BOM 的主芯片")
+            deleted = connection.execute("DELETE FROM archive_main_chips WHERE name = ?", (name,))
+            return deleted.rowcount > 0
 
     def query_documents(self, query: str, *, kind: str = "bom") -> dict[str, Any]:
         normalized = _normalize_text(query)
@@ -535,6 +576,15 @@ class ArchiveStore:
         connection = connect_database(self.db_file, "archive")
         connection.row_factory = sqlite3.Row
         return connection
+
+
+def _normalize_main_chip(name: str) -> str:
+    if not isinstance(name, str):
+        raise ArchiveError("请输入主控芯片型号")
+    name = name.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9._+/-]{0,79}", name):
+        raise ArchiveError("型号须为 1–80 个字母、数字或 . _ + / -，并以字母或数字开头")
+    return name
 
 
 def _document_timestamp(row: dict[str, Any]) -> float:
