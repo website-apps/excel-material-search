@@ -67,6 +67,61 @@ describe('V0.3 document library', () => {
         await win.previewFile(1);
         expect(document.querySelector('.bom-preview').textContent).toContain('ABC123');
     });
+    it('shows DB validation boards in filters and retains the type when editing', async () => {
+        documents = [{ ...sample, kind: 'bom', category: 'BOM', board_code: 'DB', board_type: '验证板', main_chip: 'X2600' }];
+        win.setLibraryKind('bom');
+        await vi.waitFor(() => expect(document.querySelector('.file-meta').textContent).toContain('板型：DB · 验证板'));
+        const category = document.getElementById('filterCategory');
+        expect(category.querySelector('option[value="DB"]').textContent).toBe('DB · 验证板');
+        category.value = 'DB';
+        category.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(requests.at(-1).url).toContain('board_code=DB'));
+        await login();
+        win.editFile(1);
+        expect(document.getElementById('editBoardType').value).toBe('验证板');
+        await win.saveEditFile();
+        const call = requests.find(call => call.init?.method === 'PUT');
+        expect(JSON.parse(call.init.body)).toMatchObject({ board_type: '验证板', main_chip: 'X2600' });
+    });
+    it('defaults to newest and keeps chronological order across categories', async () => {
+        expect(document.getElementById('sortOrder').value).toBe('newest');
+        expect(requests.at(-1).url).toContain('sort=newest');
+        documents = [
+            { ...sample, id: 2, title: 'New manual', category: 'LDO', created_at: '2026-10-08T00:00:00Z' },
+            { ...sample, title: 'Old manual', category: 'DC-DC', created_at: '2026-10-07T00:00:00Z' }
+        ];
+        win.setLibraryKind('manual');
+        const titles = () => [...document.querySelectorAll('.file-title')].map(node => node.textContent);
+        await vi.waitFor(() => expect(titles()).toEqual(['New manual', 'Old manual']));
+        expect(document.querySelector('time').textContent).toContain('上传于');
+        expect(document.querySelector('time').dateTime).toBe('2026-10-08T00:00:00Z');
+        expect(document.querySelector('.file-category').textContent).toBe('LDO');
+        documents.reverse();
+        const sort = document.getElementById('sortOrder');
+        sort.value = 'oldest';
+        sort.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(titles()).toEqual(['Old manual', 'New manual']));
+        expect(requests.at(-1).url).toContain('sort=oldest');
+        document.getElementById('filterCategory').value = 'LDO';
+        document.getElementById('filterCategory').dispatchEvent(new Event('change'));
+        await vi.waitFor(() => expect(requests.at(-1).url).toContain('category=LDO'));
+        expect(requests.at(-1).url).toContain('sort=oldest');
+        win.setLibraryKind('bom');
+        await vi.waitFor(() => expect(requests.at(-1).url).toContain('kind=bom&sort=oldest'));
+    });
+    it('displays BOM modification time with upload time as fallback', async () => {
+        documents = [
+            { ...sample, kind: 'bom', file_modified_at: '2026-10-06T12:00:00Z', created_at: '2026-10-08T00:00:00Z' },
+            { ...sample, id: 2, kind: 'bom', created_at: '2026-10-07T00:00:00Z' }
+        ];
+        win.setLibraryKind('bom');
+        await vi.waitFor(() => expect(document.querySelectorAll('time')).toHaveLength(2));
+        const times = document.querySelectorAll('time');
+        expect(times[0].textContent).toContain('修改于');
+        expect(times[0].dateTime).toBe('2026-10-06T12:00:00Z');
+        expect(times[1].textContent).toContain('上传于');
+        expect(times[1].dateTime).toBe('2026-10-07T00:00:00Z');
+    });
     it('extracts metadata before upload and submits confirmed fields', async () => {
         await login();
         await chooseFile();

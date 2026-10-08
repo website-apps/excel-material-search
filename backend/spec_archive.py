@@ -19,6 +19,9 @@ from backend.archive_search import query_matches
 from backend.excel_index import ExcelIndexStore
 
 
+BOARD_TYPES = {"RD": "开发板", "PD": "产品板", "DB": "验证板"}
+
+
 class ArchiveError(ValueError):
     """Raised when a document cannot be stored or indexed."""
 
@@ -88,10 +91,12 @@ class ArchiveStore:
         vendor: str = "",
         board_code: str = "",
         main_chip: str = "",
+        sort_order: str = "newest",
     ) -> list[dict[str, Any]]:
+        if sort_order not in {"newest", "oldest"}:
+            raise ArchiveError("时间排序无效")
         rows = self._load_rows()
-        if kind == "bom":
-            rows.sort(key=lambda row: row["file_modified_at"] or row["created_at"], reverse=True)
+        rows.sort(key=lambda row: (_document_timestamp(row), row["id"]), reverse=sort_order == "newest")
         return [
             self._public_document(row)
             for row in rows
@@ -309,7 +314,7 @@ class ArchiveStore:
         updates = {name: _text(payload[name])[:limit] for name, limit in fields if name in payload}
         if row["kind"] == "bom":
             board_type = updates.get("board_type", row["board_type"])
-            updates["board_code"] = "RD" if board_type == "开发板" else "PD" if board_type == "产品板" else ""
+            updates["board_code"] = next((code for code, name in BOARD_TYPES.items() if name == board_type), "")
             if "main_chip" in updates:
                 updates["main_chip"] = updates["main_chip"].upper()
         if updates:
@@ -457,7 +462,7 @@ class ArchiveStore:
         if vendor and row["vendor"] != vendor:
             return False
         if board_code == "__other__":
-            if row["board_code"] in {"RD", "PD"}:
+            if row["board_code"] in BOARD_TYPES:
                 return False
         elif board_code and row["board_code"] != board_code:
             return False
@@ -532,17 +537,32 @@ class ArchiveStore:
         return connection
 
 
+def _document_timestamp(row: dict[str, Any]) -> float:
+    values = [row["created_at"]]
+    if row["kind"] == "bom":
+        values.insert(0, row["file_modified_at"])
+    for value in values:
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=timezone.utc).timestamp() if parsed.tzinfo is None else parsed.timestamp()
+        except (ValueError, OverflowError, OSError):
+            continue
+    return 0
+
+
 def parse_bom_filename(filename: str) -> dict[str, str]:
     stem = Path(filename).stem.strip()
-    identity = re.match(r"^(RD|PD)_([A-Z][A-Z0-9]*\d[A-Z0-9]*)_", stem, re.IGNORECASE)
+    identity = re.match(r"^(RD|PD|DB)_([A-Z][A-Z0-9]*\d[A-Z0-9]*)_", stem, re.IGNORECASE)
     if identity is None:
         return {"board_code": "", "board_type": "", "main_chip": "", "board_name": ""}
     board_code = identity.group(1).upper()
-    versioned = re.match(r"^(RD|PD)_([A-Z][A-Z0-9]*\d[A-Z0-9]*)_.*?_V\d+(?:\.\d+)+", stem, re.IGNORECASE)
+    versioned = re.match(r"^(RD|PD|DB)_([A-Z][A-Z0-9]*\d[A-Z0-9]*)_.*?_V\d+(?:\.\d+)+", stem, re.IGNORECASE)
     components_at = stem.upper().rfind("_COMPONENTS LIST")
     return {
         "board_code": board_code,
-        "board_type": "开发板" if board_code == "RD" else "产品板",
+        "board_type": BOARD_TYPES[board_code],
         "main_chip": identity.group(2).upper(),
         "board_name": versioned.group(0) if versioned else stem[:components_at] if components_at >= 0 else "",
     }

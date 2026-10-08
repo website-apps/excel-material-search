@@ -41,11 +41,25 @@ function chooseFilter(label: string, value: string) {
   fireEvent.pointerDown(trigger);
   fireEvent.click(trigger);
   const option = value === "" ? (label === "板型筛选" ? "所有板型" : "所有主芯片")
-    : value === "__other__" ? "其他" : value === "RD" ? "RD · 开发板" : value === "PD" ? "PD · 产品板" : value;
+    : value === "__other__" ? "其他" : value === "RD" ? "RD · 开发板" : value === "PD" ? "PD · 产品板" : value === "DB" ? "DB · 验证板" : value;
   fireEvent.click(screen.getByRole("option", { name: option }));
 }
 
 describe("BOM library filters", () => {
+  it("lists DB validation boards separately from other boards", async () => {
+    const db: ExcelIndexedFile = { id: 6, file_name: "DB_X2600_TEST_V1.0.xlsx", board_code: "DB", main_chip: "X2600", status: "ready" };
+    vi.mocked(api.fetchExcelFiles).mockResolvedValue([...files, db]);
+    const library = await openBomLibrary();
+    chooseFilter("板型筛选", "DB");
+    chooseFilter("主芯片筛选", "X2600");
+    expect(library.getByRole("heading", { name: db.file_name })).toBeTruthy();
+    expect(library.getAllByRole("article")).toHaveLength(1);
+    chooseFilter("主芯片筛选", "");
+    chooseFilter("板型筛选", "__other__");
+    expect(library.queryByRole("heading", { name: db.file_name })).toBeNull();
+    expect(library.getAllByRole("article")).toHaveLength(2);
+  });
+
   it("combines board, chip and filename filters without narrowing available options", async () => {
     const library = await openBomLibrary();
     const board = library.getByRole("combobox", { name: "板型筛选" });

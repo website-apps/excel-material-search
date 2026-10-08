@@ -44,7 +44,7 @@ def register_archive_v03(app, archive, admins, prefix="/apps/excel-material-sear
     @api.get("/files")
     def files():
         filters = {name: request.args.get(name, "") for name in ("kind", "category", "vendor", "board_code", "main_chip")}
-        documents = archive.list_documents(query=request.args.get("q", ""), **filters)
+        documents = archive.list_documents(query=request.args.get("q", ""), sort_order=request.args.get("sort", "newest"), **filters)
         return jsonify(files=[client_file(document) for document in documents])
 
     @api.post("/files/analyze")

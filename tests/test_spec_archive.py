@@ -15,7 +15,7 @@ excel_module.connect_database = connect_sqlite
 archive_module.connect_database = connect_sqlite
 
 from backend.excel_index import ExcelIndexStore
-from backend.spec_archive import ArchiveStore
+from backend.spec_archive import ArchiveStore, parse_bom_filename
 
 
 def malformed_unicode_pdf_bytes() -> bytes:
@@ -146,6 +146,42 @@ class SpecArchiveStoreTests(unittest.TestCase):
         documents = restarted.list_documents(kind="bom")
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["original_name"], indexed["original_name"])
+
+    def test_db_filename_recognizes_board_chip_and_version(self) -> None:
+        for filename, chip, board_name in (
+            ("DB_X3000A_MACAW_DVP&TPC_V1.0 Components List.xlsx", "X3000A", "DB_X3000A_MACAW_DVP&TPC_V1.0"),
+            ("DB_X2600_COD_V1.1_Components_List.xlsx", "X2600", "DB_X2600_COD_V1.1"),
+            ("db_x1000_bi_v1.0.xlsx", "X1000", "db_x1000_bi_v1.0"),
+        ):
+            with self.subTest(filename=filename):
+                self.assertEqual(parse_bom_filename(filename), {
+                    "board_code": "DB", "board_type": "验证板", "main_chip": chip, "board_name": board_name,
+                })
+        self.assertEqual(parse_bom_filename("CUSTOM_X2000_DEMO.xlsx")["board_code"], "")
+
+    def test_time_sort_uses_bom_modification_time_and_manual_upload_time(self) -> None:
+        records = [
+            ("bom", "2026-10-08T09:00:00+08:00", "2026-10-01T00:00:00Z"),
+            ("bom", "2026-10-08T00:30:00Z", "2026-10-07T00:00:00Z"),
+            ("bom", "", "2026-10-08T00:45:00Z"),
+            ("bom", "invalid", "2026-10-08T00:40:00Z"),
+            ("manual", "2026-10-09T00:00:00Z", "2026-10-06T00:00:00Z"),
+            ("manual", "2026-10-01T00:00:00Z", "2026-10-07T00:00:00Z"),
+            ("manual", "", "2026-10-07T00:00:00Z"),
+        ]
+        ids = []
+        for index, (kind, modified, created) in enumerate(records):
+            document = self.archive.upload_document(f"time-{index}.txt", f"record {index}".encode(), kind="manual")
+            ids.append(document["id"])
+            with self.archive._connect() as connection:
+                connection.execute(
+                    "UPDATE archive_documents SET kind = ?, file_modified_at = ?, created_at = ? WHERE id = ?",
+                    (kind, modified, created, document["id"]),
+                )
+        for kind, expected in (("bom", [ids[0], ids[2], ids[3], ids[1]]), ("manual", [ids[6], ids[5], ids[4]])):
+            with self.subTest(kind=kind):
+                self.assertEqual([row["id"] for row in self.archive.list_documents(kind=kind)], expected)
+                self.assertEqual([row["id"] for row in self.archive.list_documents(kind=kind, sort_order="oldest")], expected[::-1])
 
 
 if __name__ == "__main__":

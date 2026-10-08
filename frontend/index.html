@@ -38,6 +38,10 @@
         <input type="text" id="searchInput" aria-label="搜索当前资料库" placeholder="搜索当前资料库…">
         <select id="filterCategory" aria-label="分类或板型"><option value="">所有分类</option></select>
         <select id="filterVendor" aria-label="厂商或主芯片"><option value="">所有厂商</option></select>
+        <select id="sortOrder" aria-label="时间排序" title="器件手册按上传时间；BOM 按文件修改时间，缺失时使用上传时间">
+          <option value="newest">时间：最新在前</option>
+          <option value="oldest">时间：最早在前</option>
+        </select>
         <span class="count" id="resultCount">共 0 个文件</span>
       </div>
       <div class="file-list" id="fileList"></div>
@@ -140,7 +144,7 @@
       <div class="modal-header"><h2>编辑 BOM 标签</h2><button class="modal-close" aria-label="关闭" onclick="closeBomEditModal()">×</button></div>
       <div class="modal-body">
         <div class="meta-grid">
-          <div class="field"><label for="editBoardType">板型</label><select id="editBoardType"><option value="">未设置</option><option value="开发板">开发板</option><option value="产品板">产品板</option></select></div>
+          <div class="field"><label for="editBoardType">板型</label><select id="editBoardType"><option value="">未设置</option><option value="开发板">RD · 开发板</option><option value="产品板">PD · 产品板</option><option value="验证板">DB · 验证板</option></select></div>
           <div class="field"><label for="editMainChip">主芯片</label><input id="editMainChip" placeholder="例如 X2000"></div>
           <div class="field full"><label for="editBoardName">板名</label><input id="editBoardName" placeholder="例如 RD_X2000_DEMO_V1.0"></div>
         </div>

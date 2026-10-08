@@ -545,7 +545,7 @@ function BomMaterialPanel(props: PanelProps) {
   const [hasSearched, setHasSearched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const filterOptions = useMemo(() => ({
-    boardCodes: Array.from(new Set(files.map((file) => file.board_code || "").filter((code) => code === "RD" || code === "PD"))).sort(),
+    boardCodes: Array.from(new Set(files.map((file) => file.board_code || "").filter((code) => ["RD", "PD", "DB"].includes(code)))).sort(),
     mainChips: Array.from(new Set(files.map((file) => file.main_chip || "").filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-CN"))
   }), [files]);
 
@@ -692,7 +692,7 @@ function BomMaterialPanel(props: PanelProps) {
   const normalizedFileQuery = fileQuery.trim().toLocaleLowerCase();
   const filteredFiles = files.filter((file) => {
     if (normalizedFileQuery && !file.file_name.toLocaleLowerCase().includes(normalizedFileQuery)) return false;
-    if (boardCode === "__other__" ? ["RD", "PD"].includes(file.board_code || "") : boardCode && file.board_code !== boardCode) return false;
+    if (boardCode === "__other__" ? ["RD", "PD", "DB"].includes(file.board_code || "") : boardCode && file.board_code !== boardCode) return false;
     if (mainChip === "__other__" ? Boolean(file.main_chip) : mainChip && file.main_chip !== mainChip) return false;
     return true;
   });
@@ -760,8 +760,8 @@ function BomMaterialPanel(props: PanelProps) {
                 <ArchiveFilter label="板型筛选" icon={<CircuitBoard size={16} aria-hidden="true" />} value={boardCode}
                   onChange={(value) => { setBoardCode(value); setSelectedFileIds([]); }}
                   options={[{ value: "", label: "所有板型", count: files.length },
-                    ...filterOptions.boardCodes.map((value) => ({ value, label: `${value} · ${value === "RD" ? "开发板" : "产品板"}`, count: files.filter((file) => file.board_code === value).length })),
-                    { value: "__other__", label: "其他", count: files.filter((file) => !["RD", "PD"].includes(file.board_code || "")).length }]} />
+                    ...filterOptions.boardCodes.map((value) => ({ value, label: `${value} · ${value === "RD" ? "开发板" : value === "DB" ? "验证板" : "产品板"}`, count: files.filter((file) => file.board_code === value).length })),
+                    { value: "__other__", label: "其他", count: files.filter((file) => !["RD", "PD", "DB"].includes(file.board_code || "")).length }]} />
                 <ArchiveFilter label="主芯片筛选" icon={<Cpu size={16} aria-hidden="true" />} value={mainChip}
                   onChange={(value) => { setMainChip(value); setSelectedFileIds([]); }}
                   options={[{ value: "", label: "所有主芯片", count: files.length },

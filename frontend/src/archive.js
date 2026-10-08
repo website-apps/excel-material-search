@@ -93,7 +93,7 @@
     return false;
   }
 
-  function setFilterOptions(selectId, allLabel, values) {
+  function setFilterOptions(selectId, allLabel, values, label = value => value) {
     const select = document.getElementById(selectId);
     const selected = select.value;
     select.replaceChildren();
@@ -104,7 +104,7 @@
     values.forEach(value => {
       const option = document.createElement('option');
       option.value = value;
-      option.textContent = value;
+      option.textContent = label(value);
       select.appendChild(option);
     });
     select.value = values.includes(selected) ? selected : '';
@@ -130,7 +130,9 @@
       const allFiles = data.files || [];
       const unique = values => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
       if (activeKind === 'bom') {
-        setFilterOptions('filterCategory', '所有板型', unique(allFiles.map(file => file.board_code)));
+        const boardTypes = { RD: '开发板', PD: '产品板', DB: '验证板' };
+        setFilterOptions('filterCategory', '所有板型', unique(allFiles.map(file => file.board_code)),
+          code => boardTypes[code] ? `${code} · ${boardTypes[code]}` : code);
         setFilterOptions('filterVendor', '所有主芯片', unique(allFiles.map(file => file.main_chip)));
         addOtherFilterOption('filterCategory');
         addOtherFilterOption('filterVendor');
@@ -160,6 +162,7 @@
       if (ven) params.append('vendor', ven);
     }
     params.append('kind', activeKind);
+    params.append('sort', document.getElementById('sortOrder').value);
     try {
       const res = await fetch(apiUrl('/files?' + params.toString()));
       if (!res.ok) await responseData(res);
@@ -202,6 +205,16 @@
     return `${attributes ? `<div class="file-attributes">${attributes}</div>` : ''}${summary}`;
   }
 
+  function renderFileTime(file) {
+    const modified = file.kind === 'bom' && file.file_modified_at && !Number.isNaN(Date.parse(file.file_modified_at)) ? file.file_modified_at : '';
+    const value = modified || file.created_at;
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return '';
+    const label = modified ? '修改于' : '上传于';
+    const formatted = date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    return `<time datetime="${escapeHtml(value)}" title="${label} ${escapeHtml(date.toLocaleString('zh-CN'))}">${label} ${escapeHtml(formatted)}</time>`;
+  }
+
   function renderFiles() {
     const container = document.getElementById('fileList');
     document.getElementById('resultCount').textContent = '共 ' + files.length + ' 个文件';
@@ -209,16 +222,13 @@
       container.innerHTML = '\u003cdiv class="no-match"\u003e没有匹配的文件，请上传新文档或调整搜索条件。\u003c/div\u003e';
       return;
     }
-    const grouped = {};
-    files.forEach(f => { const g = f.category || '未分类'; (grouped[g] = grouped[g] || []).push(f); });
-    const order = categories.filter(c => grouped[c]).concat(Object.keys(grouped).filter(c => !categories.includes(c)));
-    container.innerHTML = order.map(c => {
-      const items = grouped[c].map(f => {
-        const details = renderMetadata(f);
-        return `
-        \u003cdiv class="file-item"\u003e
+    container.innerHTML = files.map(f => {
+      const details = renderMetadata(f);
+      return `
+        \u003cdiv class="file-item" data-file-id="${f.id}"\u003e
           \u003cdiv class="file-info"\u003e
             \u003cdiv class="file-title"\u003e${highlightTerms(f.title)}\u003c/div\u003e
+            <div class="file-context"><span class="file-category">${escapeHtml(f.category || '未分类')}</span>${renderFileTime(f)}</div>
             \u003cdiv class="file-meta"\u003e${details}\u003c/div\u003e
           \u003c/div\u003e
           \u003cdiv class="file-actions"\u003e
@@ -233,13 +243,6 @@
               \u003csvg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"\u003e\u003cpolyline points="3 6 5 6 21 6"/\u003e\u003cpath d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/\u003e\u003c/svg\u003e
             \u003c/button\u003e
           \u003c/div\u003e
-        \u003c/div\u003e
-      `;
-      }).join('');
-      return `
-        \u003cdiv class="file-group"\u003e
-          \u003cdiv class="file-group-title"\u003e${escapeHtml(c)}\u003c/div\u003e
-          \u003cdiv class="file-group-items"\u003e${items}\u003c/div\u003e
         \u003c/div\u003e
       `;
     }).join('');
@@ -683,7 +686,7 @@
   document.getElementById('fileInput').addEventListener('change', updateSelectedFiles);
   document.getElementById('bomFileInput').addEventListener('change', updateBomSelection);
   document.getElementById('searchInput').addEventListener('input', debounce(loadFiles, 250));
-  ['filterCategory','filterVendor'].forEach(id => document.getElementById(id).addEventListener('change', loadFiles));
+  ['filterCategory','filterVendor','sortOrder'].forEach(id => document.getElementById(id).addEventListener('change', loadFiles));
   document.getElementById('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') askAI(); });
   const dz = document.getElementById('dropzone');
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });

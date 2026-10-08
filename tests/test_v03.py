@@ -59,10 +59,33 @@ class V03Tests(unittest.TestCase):
         updated = self.client.put(path, json={"board_type": "产品板", "main_chip": "x3000"})
         self.assertEqual(updated.json["file"]["main_chip"], "X3000")
 
-    def test_db_prefix_is_other_as_in_reference(self):
+    def test_db_board_upload_filter_edit_and_reindex(self):
         self.login()
-        file = self.upload("DB_X2000_DEMO.xlsx", workbook_bytes(), kind="bom").json["file"]
-        self.assertEqual((file["board_code"], file["main_chip"]), ("", ""))
+        file = self.upload("DB_X2000_DEMO_V1.0.xlsx", workbook_bytes(), kind="bom").json["file"]
+        self.assertEqual((file["board_code"], file["board_type"], file["main_chip"]), ("DB", "验证板", "X2000"))
+        path = self.api + f"/v03/files/{file['id']}"
+        visitor = self.app.test_client()
+        self.assertEqual(visitor.get(self.api + "/v03/files?kind=bom&board_code=DB&main_chip=X2000").json["files"][0]["id"], file["id"])
+        self.assertEqual(visitor.get(self.api + "/v03/files?kind=bom&board_code=__other__").json["files"], [])
+        self.assertEqual(self.client.put(path, json={"main_chip": "x2600"}).json["file"]["board_code"], "DB")
+        self.client.put(path, json={"board_type": "产品板"})
+        updated = self.client.put(path, json={"board_type": "验证板", "board_name": "Custom DB board"}).json["file"]
+        self.assertEqual(updated["board_code"], "DB")
+        self.assertEqual(updated["main_chip"], "X2600")
+        self.client.post(self.api + "/v03/files/reindex")
+        listed = visitor.get(self.api + "/v03/files?kind=bom&board_code=DB&main_chip=X2600").json["files"]
+        self.assertEqual(listed[0]["board_name"], "Custom DB board")
+
+    def test_time_sort_defaults_newest_and_supports_oldest_with_filters(self):
+        self.login()
+        old = self.upload("old.txt", b"old ABC123", category="LDO").json["file"]
+        new = self.upload("new.txt", b"new ABC123", category="LDO").json["file"]
+        self.upload("other.txt", b"other ABC123", category="DC-DC")
+        url = self.api + "/v03/files?kind=manual&category=LDO&q=ABC123"
+        visitor = self.app.test_client()
+        self.assertEqual([file["id"] for file in visitor.get(url).json["files"]], [new["id"], old["id"]])
+        self.assertEqual([file["id"] for file in visitor.get(url + "&sort=oldest").json["files"]], [old["id"], new["id"]])
+        self.assertEqual(visitor.get(url + "&sort=invalid").status_code, 422)
 
     @patch.dict("os.environ", {"SPEC_ARCHIVE_AI_API_KEY": ""})
     def test_analyze_does_not_store_files_and_keeps_fallback(self):
