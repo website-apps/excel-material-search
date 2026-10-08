@@ -232,6 +232,29 @@ def register_routes(app, excel_index, archive_store, app_admins):
             }
         )
 
+    @app.post("/apps/excel-material-search/api/files/analyze")
+    def analyze_archive_upload():
+        error_response = require_app_admin(EXCEL_MATERIAL_APP_SLUG)
+        if error_response is not None:
+            return error_response
+        upload = request.files.get("file")
+        if upload is None or not upload.filename:
+            return jsonify({"error": "请选择资料文件"}), 400
+        try:
+            return jsonify(archive_store.analyze_upload(upload.filename, upload.read(20 * 1024 * 1024 + 1)))
+        except ArchiveError as exc:
+            return jsonify({"error": str(exc)}), 422
+
+    @app.post("/apps/excel-material-search/api/documents/<int:document_id>/analyze")
+    def analyze_existing_archive_document(document_id: int):
+        error_response = require_app_admin(EXCEL_MATERIAL_APP_SLUG)
+        if error_response is not None:
+            return error_response
+        result = archive_store.analyze_document(document_id)
+        if result is None:
+            return jsonify({"error": "器件资料不存在"}), 404
+        return jsonify(result)
+
     @app.post("/apps/excel-material-search/api/documents")
     def upload_archive_documents():
         error_response = require_app_admin(EXCEL_MATERIAL_APP_SLUG)

@@ -77,6 +77,12 @@ export interface ArchiveUploadResponse {
   documents: ArchiveUploadResult[];
 }
 
+export interface ArchiveMetadataAnalysis {
+  metadata: Record<string, string>;
+  extracted_chars: number;
+  warning?: string;
+}
+
 export interface ArchiveManualMatch {
   document_id: number;
   title: string;

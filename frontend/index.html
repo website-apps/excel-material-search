@@ -1,2 +1,186 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>器件资料与 BOM 检索</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>器件资料与 BOM 检索 · SPEC-ARCHIVE</title>
+  <link rel="stylesheet" href="/src/archive.css">
+</head>
+
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg></div>
+      <div><h1>SPEC-ARCHIVE</h1><div class="sub">器件资料与 BOM 检索</div></div>
+    </div>
+    <div class="header-actions">
+      <a class="btn btn-ghost" href="/apps">返回应用中心</a>
+      <button class="btn btn-ghost admin-only" onclick="reindexFiles()">重建索引</button>
+      <button class="btn btn-primary" id="manualUploadButton" hidden onclick="openUploadModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 上传手册
+      </button>
+      <button class="btn btn-primary" id="bomUploadButton" hidden onclick="openBomUploadModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 上传 BOM</button>
+      <button class="btn btn-primary" onclick="openChatPanel()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> AI 助手
+      </button>
+      <button class="btn btn-ghost" id="adminButton" onclick="openAdminModal()">管理员登录</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="card">
+      <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> 文档库</h2>
+      <div class="library-tabs">
+        <button class="library-tab active" data-kind="manual" onclick="setLibraryKind('manual')">器件手册</button>
+        <button class="library-tab" data-kind="bom" onclick="setLibraryKind('bom')">BOM表</button>
+      </div>
+      <div class="filter-bar">
+        <input type="text" id="searchInput" aria-label="搜索当前资料库" placeholder="搜索当前资料库…">
+        <select id="filterCategory" aria-label="分类或板型"><option value="">所有分类</option></select>
+        <select id="filterVendor" aria-label="厂商或主芯片"><option value="">所有厂商</option></select>
+        <span class="count" id="resultCount">共 0 个文件</span>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </section>
+  </div>
+
+  <div class="modal-overlay" id="uploadModal" onclick="closeUploadModal(event)">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 上传文档</h2>
+        <button class="modal-close" aria-label="关闭" onclick="closeUploadModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt,.md,.png,.jpg,.jpeg,.gif,.webp" multiple>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--accent);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+          <div class="default-text"><p>拖拽或点击上传 PDF / Word / Excel / TXT / Markdown<br><span style="font-size:12px">选择文件后将解析正文，自动填写型号、类别、厂商、封装与简介</span></p></div>
+          <div class="selected-files" id="selectedFiles"></div>
+        </div>
+        <div class="progress-status" id="analysisProgress" aria-live="polite">
+          <div class="progress-caption"><span id="progressLabel">正在处理</span><strong id="progressPercent">0%</strong></div>
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="field"><label for="metaName">器件型号</label><input id="metaName" placeholder="选择文件后自动填充"></div>
+          <div class="field"><label for="metaRemark">备注</label><input id="metaRemark" placeholder="手工补充信息，不自动填写"></div>
+          <div class="field"><label for="metaCategory">器件类型</label><input id="metaCategory" placeholder="选择文件后自动填写，可手工修改"></div>
+          <div class="field">
+            <label for="metaPackage">封装信息</label>
+            <input id="metaPackage" placeholder="例如：QFN-48 / 0805">
+          </div>
+          <div class="field"><label for="metaVendor">器件厂商</label><input id="metaVendor" placeholder="例如：TI / Rockchip / Sony"></div>
+          <div class="field full"><label for="metaIntro">器件简介</label><input id="metaIntro" placeholder="由文档正文自动提取，可修改"></div>
+        </div>
+
+        <div class="pending-nav" id="pendingNav">
+          <span id="pendingTitle">文件 0 / 0</span>
+          <span id="pendingName" style="color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+          <div>
+            <button class="btn btn-ghost" onclick="prevPending()">上一个</button>
+            <button class="btn btn-ghost" onclick="nextPending()">下一个</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" onclick="simulateUpload()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 确认上传
+          </button>
+          <button class="btn btn-ghost" onclick="closeUploadModal()">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="bomUploadModal" onclick="closeBomUploadModal(event)">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+      <div class="modal-header"><h2>上传 BOM 物料表</h2><button class="modal-close" aria-label="关闭" onclick="closeBomUploadModal()">×</button></div>
+      <div class="modal-body">
+        <div class="dropzone" onclick="document.getElementById('bomFileInput').click()">
+          <input type="file" id="bomFileInput" accept=".xls,.xlsx" multiple>
+          <div class="default-text"><p>拖拽或点击上传 Excel BOM 文件<br><span style="font-size:12px">文件名将自动作为 BOM 名称，无需填写其他信息</span></p></div>
+          <div class="selected-files" id="bomSelectedFiles"></div>
+        </div>
+        <div class="actions"><button class="btn btn-primary" onclick="uploadBomFiles()">确认上传 BOM</button><button class="btn btn-ghost" onclick="closeBomUploadModal()">取消</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="adminModal" onclick="closeAdminModal(event)">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:420px">
+      <div class="modal-header"><h2>管理员登录</h2><button class="modal-close" aria-label="关闭" onclick="closeAdminModal()">×</button></div>
+      <div class="modal-body">
+        <div class="field"><label for="adminUsername">管理员账号</label><input id="adminUsername" autocomplete="username" placeholder="输入现有管理员账号"></div>
+        <div class="field"><label for="adminPassword">管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="输入管理员密码" onkeydown="if(event.key==='Enter') loginAdmin()"></div>
+        <div class="actions"><button class="btn btn-primary" onclick="loginAdmin()">登录</button><button class="btn btn-ghost" onclick="closeAdminModal()">取消</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="editModal" onclick="closeEditModal(event)">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+      <div class="modal-header"><h2>编辑器件手册标签</h2><button class="modal-close" aria-label="关闭" onclick="closeEditModal()">×</button></div>
+      <div class="modal-body">
+        <div class="meta-grid">
+          <div class="field"><label for="editTitle">名称</label><input id="editTitle"></div>
+          <div class="field"><label for="editCategory">分类</label><input id="editCategory"></div>
+          <div class="field"><label for="editVendor">厂商</label><input id="editVendor"></div>
+          <div class="field"><label for="editPackage">封装</label><input id="editPackage"></div>
+          <div class="field"><label for="editRemark">备注</label><input id="editRemark"></div>
+          <div class="field full"><label for="editNote">器件简介</label><input id="editNote"></div>
+        </div>
+        <div class="actions"><button class="btn btn-ghost" id="analyzeExistingButton" onclick="analyzeExistingFile()">从正文提取信息</button><button class="btn btn-primary" onclick="saveEditFile()">保存修改</button><button class="btn btn-ghost" onclick="closeEditModal()">取消</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="bomEditModal" onclick="closeBomEditModal(event)">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+      <div class="modal-header"><h2>编辑 BOM 标签</h2><button class="modal-close" aria-label="关闭" onclick="closeBomEditModal()">×</button></div>
+      <div class="modal-body">
+        <div class="meta-grid">
+          <div class="field"><label for="editBoardType">板型</label><select id="editBoardType"><option value="">未设置</option><option value="开发板">开发板</option><option value="产品板">产品板</option></select></div>
+          <div class="field"><label for="editMainChip">主芯片</label><input id="editMainChip" placeholder="例如 X2000"></div>
+          <div class="field full"><label for="editBoardName">板名</label><input id="editBoardName" placeholder="例如 RD_X2000_DEMO_V1.0"></div>
+        </div>
+        <div class="actions"><button class="btn btn-primary" onclick="saveEditFile()">保存修改</button><button class="btn btn-ghost" onclick="closeBomEditModal()">取消</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay preview-modal" id="previewModal" onclick="closePreviewModal(event)">
+    <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 id="previewTitle">文档预览</h2>
+        <button class="modal-close" aria-label="关闭" onclick="closePreviewModal()">×</button>
+      </div>
+      <div class="modal-body" id="previewBody"></div>
+    </div>
+  </div>
+
+  <div class="floating-panel" id="chatPanel">
+    <div class="panel-header">
+      <h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> AI 助手</h2>
+      <button class="modal-close" aria-label="关闭" onclick="closeChatPanel()">×</button>
+    </div>
+    <div class="panel-body">
+      <div class="status-row">
+        <span class="badge online"><span class="pulse"></span> 在线</span>
+        <span class="badge">本机文档库</span>
+      </div>
+      <div class="messages" id="messages">
+        <div class="msg ai">你好！我是 SPEC-ARCHIVE 的 AI 助手。我可以基于已上传的硬件文档回答关于芯片型号、接口、封装、电源方案等问题。<br>试试问我：「G2257Q51U 芯片各路输出电流为多少？」</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chatInput" placeholder="输入问题，按回车发送…">
+        <button class="btn btn-primary" onclick="askAI()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/src/archive.js"></script>
+</body>
+</html>

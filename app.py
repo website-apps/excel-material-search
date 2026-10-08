@@ -11,6 +11,7 @@ from backend.database import connect_database
 from backend.excel_index import ExcelIndexStore
 from backend.spec_archive import ArchiveStore
 from backend.routes import register_routes
+from backend.archive_v03 import register_archive_v03
 
 BASE = "/apps/excel-material-search"
 
@@ -27,6 +28,7 @@ def create_app(storage=None, admin_config=None, secret=None):
     archive = ArchiveStore(storage / "archive.sqlite3", storage, excel_index)
     admins = AppAdminStore(Path(admin_config or "/app-config/app-admins.json"))
     register_routes(app, excel_index, archive, admins)
+    register_archive_v03(app, archive, admins)
 
     @app.errorhandler(HTTPException)
     def api_error(error):

@@ -36,30 +36,44 @@ async function openBomLibrary() {
   return within(screen.getByRole("region", { name: "文件库" }));
 }
 
+function chooseFilter(label: string, value: string) {
+  const trigger = screen.getByRole("combobox", { name: label });
+  fireEvent.pointerDown(trigger);
+  fireEvent.click(trigger);
+  const option = value === "" ? (label === "板型筛选" ? "所有板型" : "所有主芯片")
+    : value === "__other__" ? "其他" : value === "RD" ? "RD · 开发板" : value === "PD" ? "PD · 产品板" : value;
+  fireEvent.click(screen.getByRole("option", { name: option }));
+}
+
 describe("BOM library filters", () => {
   it("combines board, chip and filename filters without narrowing available options", async () => {
     const library = await openBomLibrary();
     const board = library.getByRole("combobox", { name: "板型筛选" });
     const chip = library.getByRole("combobox", { name: "主芯片筛选" });
-    expect(within(chip).getAllByRole("option", { name: "X2000" })).toHaveLength(1);
-    fireEvent.change(board, { target: { value: "RD" } });
-    fireEvent.change(chip, { target: { value: "X2000" } });
+    fireEvent.click(chip);
+    expect(screen.getAllByRole("option", { name: "X2000" })).toHaveLength(1);
+    fireEvent.keyDown(chip, { key: "Escape" });
+    chooseFilter("板型筛选", "RD");
+    chooseFilter("主芯片筛选", "X2000");
     fireEvent.change(library.getByRole("searchbox", { name: "搜索文件库" }), { target: { value: "BETA" } });
     expect(library.getByRole("heading", { name: files[1].file_name })).toBeTruthy();
     expect(library.queryByRole("heading", { name: files[0].file_name })).toBeNull();
     expect(library.queryByRole("heading", { name: files[2].file_name })).toBeNull();
     expect(library.getByRole("heading", { name: "1 / 5 个文件" })).toBeTruthy();
-    expect(within(chip).getByRole("option", { name: "X1000" })).toBeTruthy();
-    expect(within(board).getByRole("option", { name: "PD · 产品板" })).toBeTruthy();
+    fireEvent.click(chip);
+    expect(screen.getByRole("option", { name: "X1000" })).toBeTruthy();
+    fireEvent.keyDown(chip, { key: "Escape" });
+    fireEvent.click(board);
+    expect(screen.getByRole("option", { name: "PD · 产品板" })).toBeTruthy();
   });
 
   it("supports other boards and unidentified chips independently and together", async () => {
     const library = await openBomLibrary();
-    fireEvent.change(library.getByRole("combobox", { name: "板型筛选" }), { target: { value: "__other__" } });
+    chooseFilter("板型筛选", "__other__");
     expect(library.getByRole("heading", { name: files[3].file_name })).toBeTruthy();
     expect(library.getByRole("heading", { name: files[4].file_name })).toBeTruthy();
     expect(library.queryByRole("heading", { name: files[0].file_name })).toBeNull();
-    fireEvent.change(library.getByRole("combobox", { name: "主芯片筛选" }), { target: { value: "__other__" } });
+    chooseFilter("主芯片筛选", "__other__");
     expect(library.getByRole("heading", { name: files[3].file_name })).toBeTruthy();
     expect(library.queryByRole("heading", { name: files[4].file_name })).toBeNull();
   });
@@ -68,12 +82,12 @@ describe("BOM library filters", () => {
     const library = await openBomLibrary();
     const board = library.getByRole("combobox", { name: "板型筛选" });
     const chip = library.getByRole("combobox", { name: "主芯片筛选" });
-    fireEvent.change(board, { target: { value: "RD" } });
-    fireEvent.change(chip, { target: { value: "X1000" } });
+    chooseFilter("板型筛选", "RD");
+    chooseFilter("主芯片筛选", "X1000");
     expect(library.getByText("未找到匹配文件")).toBeTruthy();
     expect(library.getByRole("heading", { name: "0 / 5 个文件" })).toBeTruthy();
-    fireEvent.change(board, { target: { value: "" } });
-    fireEvent.change(chip, { target: { value: "" } });
+    chooseFilter("板型筛选", "");
+    chooseFilter("主芯片筛选", "");
     expect(library.getAllByRole("article")).toHaveLength(5);
   });
 
@@ -85,8 +99,8 @@ describe("BOM library filters", () => {
     fireEvent.change(library.getByLabelText("选择 Excel 文件"), {
       target: { files: [new File(["test"], "PD_X4000_new.xlsx")] }
     });
-    await library.findByRole("option", { name: "X4000" });
-    fireEvent.change(library.getByRole("combobox", { name: "主芯片筛选" }), { target: { value: "X4000" } });
+    await library.findByRole("heading", { name: "PD_X4000_new.xlsx" });
+    chooseFilter("主芯片筛选", "X4000");
     expect(library.getByRole("heading", { name: "PD_X4000_new.xlsx" })).toBeTruthy();
     expect(library.getAllByRole("article")).toHaveLength(1);
   });
@@ -96,12 +110,12 @@ describe("BOM library filters", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(api.deleteExcelFiles).mockResolvedValue(undefined);
     fireEvent.click(library.getByRole("checkbox", { name: `选择 ${files[0].file_name}` }));
-    fireEvent.change(library.getByRole("combobox", { name: "板型筛选" }), { target: { value: "PD" } });
+    chooseFilter("板型筛选", "PD");
     expect((library.getByRole("button", { name: "批量删除" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(library.getByRole("checkbox", { name: "选择当前显示的文件" }));
     fireEvent.click(library.getByRole("button", { name: "批量删除" }));
     await waitFor(() => expect(api.deleteExcelFiles).toHaveBeenCalledWith([3]));
-    await waitFor(() => expect((library.getByRole("combobox", { name: "板型筛选" }) as HTMLSelectElement).value).toBe(""));
+    await waitFor(() => expect(library.getByRole("combobox", { name: "板型筛选" }).textContent).toBe("所有板型"));
     expect(library.getByRole("heading", { name: files[0].file_name })).toBeTruthy();
   });
 

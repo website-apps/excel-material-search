@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
 from backend.database import connect_database
@@ -22,7 +22,7 @@ class ExcelIndexError(ValueError):
 
 
 class ExcelIndexStore:
-    SUPPORTED_SUFFIXES = {".xlsx", ".xlsm", ".xltx", ".xltm"}
+    SUPPORTED_SUFFIXES = {".xls", ".xlsx", ".xlsm", ".xltx", ".xltm"}
     EXCLUDED_HEADER_KEYS = {
         "reference",
         "referencedesignator",
@@ -108,7 +108,7 @@ class ExcelIndexStore:
         created_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            workbook = load_workbook(
+            workbook = _load_legacy_workbook(payload) if suffix == ".xls" else load_workbook(
                 io.BytesIO(payload),
                 data_only=True,
                 read_only=True,
@@ -438,3 +438,29 @@ def normalize_excel_value(value: str) -> str:
 
 def _escape_like_query(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _load_legacy_workbook(payload: bytes):
+    """Adapt legacy sheets for indexing while storing the original XLS bytes."""
+    import xlrd
+
+    source = xlrd.open_workbook(file_contents=payload, on_demand=True)
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    try:
+        for sheet in source.sheets():
+            target = workbook.create_sheet(sheet.name)
+            for row_index in range(sheet.nrows):
+                values = []
+                for cell in sheet.row(row_index):
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        value = xlrd.xldate_as_datetime(cell.value, source.datemode)
+                    elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                        value = bool(cell.value)
+                    else:
+                        value = cell.value
+                    values.append(value)
+                target.append(values)
+        return workbook
+    finally:
+        source.release_resources()

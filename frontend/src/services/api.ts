@@ -1,4 +1,4 @@
-import type { ErrorResponse, ExcelIndexedFile, ExcelIndexMatch, ExcelFilesResponse, ExcelQueryResponse, ArchiveDocumentKind, ArchiveDocument, ArchiveDocumentsResponse, ArchiveUploadFailure, ArchiveUploadResult, ArchiveUploadResponse, ArchiveManualMatch, ArchiveQueryResponse, ArchiveWorkbookSheet, ArchiveWorkbookPreviewResponse, ExcelAccessSessionResponse } from "../types";
+import type { ErrorResponse, ExcelIndexedFile, ExcelIndexMatch, ExcelFilesResponse, ExcelQueryResponse, ArchiveDocumentKind, ArchiveDocument, ArchiveDocumentsResponse, ArchiveUploadFailure, ArchiveUploadResult, ArchiveUploadResponse, ArchiveMetadataAnalysis, ArchiveManualMatch, ArchiveQueryResponse, ArchiveWorkbookSheet, ArchiveWorkbookPreviewResponse, ExcelAccessSessionResponse } from "../types";
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const responseText = await response.text();
@@ -132,6 +132,16 @@ export async function uploadArchiveDocuments(
   });
   const payload = await readJsonResponse<ArchiveUploadResponse>(response);
   return payload.documents;
+}
+
+export async function analyzeArchiveFile(file: File): Promise<ArchiveMetadataAnalysis> {
+  const body = new FormData();
+  body.append("file", file);
+  return readJsonResponse<ArchiveMetadataAnalysis>(await fetch("/apps/excel-material-search/api/files/analyze", { method: "POST", body }));
+}
+
+export async function analyzeArchiveDocument(documentId: number): Promise<ArchiveMetadataAnalysis> {
+  return readJsonResponse<ArchiveMetadataAnalysis>(await fetch(`/apps/excel-material-search/api/documents/${documentId}/analyze`, { method: "POST" }));
 }
 
 export async function updateArchiveDocument(

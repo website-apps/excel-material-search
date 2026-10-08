@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Eye, FileText, LogOut, Pencil, RefreshCw, Search, Table2, Trash2, Upload, X } from "lucide-react";
+import { CircuitBoard, Cpu, Download, Eye, FileText, LogOut, Pencil, RefreshCw, Search, Table2, Tag, Trash2, Upload, X } from "lucide-react";
+import ArchiveFilter from "../components/ArchiveFilter";
 
 import {
   archiveDocumentDownloadUrl,
@@ -469,14 +470,10 @@ function ManualArchivePanel(props: PanelProps) {
             <span className="sr-only">搜索当前资料库</span>
             <input type="search" aria-label="搜索当前资料库" placeholder="搜索型号、厂商、技术关键词…" value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} />
           </label>
-          <select aria-label="分类筛选" value={category} onChange={(event) => setCategory(event.target.value)}>
-            <option value="">所有分类</option>
-            {filterOptions.categories.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <select aria-label="厂商筛选" value={vendor} onChange={(event) => setVendor(event.target.value)}>
-            <option value="">所有厂商</option>
-            {filterOptions.vendors.map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          <ArchiveFilter label="分类筛选" icon={<Tag size={16} aria-hidden="true" />} value={category} onChange={setCategory}
+            options={[{ value: "", label: "所有分类", count: documents.length }, ...filterOptions.categories.map((value) => ({ value, label: value, count: documents.filter((document) => document.category === value).length }))]} />
+          <ArchiveFilter label="厂商筛选" icon={<Cpu size={16} aria-hidden="true" />} value={vendor} onChange={setVendor}
+            options={[{ value: "", label: "所有厂商", count: documents.length }, ...filterOptions.vendors.map((value) => ({ value, label: value, count: documents.filter((document) => document.vendor === value).length }))]} />
         </div>
 
         {isAdmin && visibleDocuments.length ? (
@@ -750,6 +747,8 @@ function BomMaterialPanel(props: PanelProps) {
           <>
             <div className="ai-app-file-search">
               <div className="ai-app-file-filters">
+                <label className="archive-bom-search">
+                <Search size={17} aria-hidden="true" />
                 <input
                   type="search"
                   aria-label="搜索文件库"
@@ -757,16 +756,18 @@ function BomMaterialPanel(props: PanelProps) {
                   value={fileQuery}
                   onChange={(event) => { setFileQuery(event.target.value); setSelectedFileIds([]); }}
                 />
-                <select aria-label="板型筛选" value={boardCode} onChange={(event) => { setBoardCode(event.target.value); setSelectedFileIds([]); }}>
-                  <option value="">所有板型</option>
-                  {filterOptions.boardCodes.map((code) => <option key={code} value={code}>{code} · {code === "RD" ? "开发板" : "产品板"}</option>)}
-                  <option value="__other__">其他</option>
-                </select>
-                <select aria-label="主芯片筛选" value={mainChip} onChange={(event) => { setMainChip(event.target.value); setSelectedFileIds([]); }}>
-                  <option value="">所有主芯片</option>
-                  {filterOptions.mainChips.map((chip) => <option key={chip} value={chip}>{chip}</option>)}
-                  <option value="__other__">其他</option>
-                </select>
+                </label>
+                <ArchiveFilter label="板型筛选" icon={<CircuitBoard size={16} aria-hidden="true" />} value={boardCode}
+                  onChange={(value) => { setBoardCode(value); setSelectedFileIds([]); }}
+                  options={[{ value: "", label: "所有板型", count: files.length },
+                    ...filterOptions.boardCodes.map((value) => ({ value, label: `${value} · ${value === "RD" ? "开发板" : "产品板"}`, count: files.filter((file) => file.board_code === value).length })),
+                    { value: "__other__", label: "其他", count: files.filter((file) => !["RD", "PD"].includes(file.board_code || "")).length }]} />
+                <ArchiveFilter label="主芯片筛选" icon={<Cpu size={16} aria-hidden="true" />} value={mainChip}
+                  onChange={(value) => { setMainChip(value); setSelectedFileIds([]); }}
+                  options={[{ value: "", label: "所有主芯片", count: files.length },
+                    ...filterOptions.mainChips.map((value) => ({ value, label: value, count: files.filter((file) => file.main_chip === value).length })),
+                    { value: "__other__", label: "其他", count: files.filter((file) => !file.main_chip).length }]} />
+                {boardCode || mainChip || fileQuery ? <button type="button" className="archive-reset-filters" onClick={() => { setBoardCode(""); setMainChip(""); setFileQuery(""); setSelectedFileIds([]); }}><X size={14} aria-hidden="true" />重置</button> : null}
               </div>
               <div className="ai-app-file-batch-actions">
                 <label className="ai-app-file-select-all">

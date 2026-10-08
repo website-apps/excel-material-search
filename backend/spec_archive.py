@@ -14,6 +14,8 @@ from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from backend.database import connect_database
+from backend.archive_metadata import analyze_metadata
+from backend.archive_search import query_matches
 from backend.excel_index import ExcelIndexStore
 
 
@@ -22,7 +24,7 @@ class ArchiveError(ValueError):
 
 
 class ArchiveStore:
-    MANUAL_SUFFIXES = {".pdf", ".docx", ".xls", ".xlsx", ".xlsm", ".xltx", ".xltm", ".txt", ".md"}
+    MANUAL_SUFFIXES = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".xltx", ".xltm", ".txt", ".md", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
     MAX_INDEX_CHARS = 500_000
     MAX_PREVIEW_ROWS = 200
     MAX_PREVIEW_COLUMNS = 40
@@ -88,6 +90,8 @@ class ArchiveStore:
         main_chip: str = "",
     ) -> list[dict[str, Any]]:
         rows = self._load_rows()
+        if kind == "bom":
+            rows.sort(key=lambda row: row["file_modified_at"] or row["created_at"], reverse=True)
         return [
             self._public_document(row)
             for row in rows
@@ -218,6 +222,24 @@ class ArchiveStore:
             stored_path.unlink(missing_ok=True)
             raise
 
+    def analyze_upload(self, original_name: str, payload: bytes) -> dict[str, object]:
+        suffix = Path(original_name).suffix.lower()
+        if suffix not in self.MANUAL_SUFFIXES or not payload:
+            raise ArchiveError("请选择受支持的非空资料文件")
+        if len(payload) > 20 * 1024 * 1024:
+            raise ArchiveError("自动提取支持 20 MB 以内的文件，请手动填写较大文件的信息")
+        try:
+            text = _sanitize_document_text(_extract_document_text(payload, suffix))
+        except Exception as exc:
+            raise ArchiveError("无法读取资料正文，请手动填写信息后上传") from exc
+        return analyze_metadata(Path(original_name).name, text)
+
+    def analyze_document(self, document_id: int) -> dict[str, object] | None:
+        row = self._get_row(document_id)
+        if row is None or row["kind"] != "manual":
+            return None
+        return analyze_metadata(row["original_name"], row["content_text"])
+
     def register_excel_file(
         self,
         indexed_file: dict[str, Any],
@@ -247,7 +269,9 @@ class ArchiveStore:
             "size_bytes": indexed_file["size_bytes"],
             "extension": Path(indexed_file["original_name"]).suffix.lower().lstrip("."),
             "mime_type": mime_type(Path(indexed_file["original_name"]).suffix.lower()),
-            "content_text": self._excel_content(indexed_file["id"]),
+            "content_text": _sanitize_document_text(_extract_document_text(
+                Path(indexed_file["stored_path"]).read_bytes(), Path(indexed_file["original_name"]).suffix.lower()
+            ))[: self.MAX_INDEX_CHARS],
             "status": indexed_file["status"],
             "error": indexed_file.get("error"),
             "created_at": indexed_file["created_at"],
@@ -286,6 +310,8 @@ class ArchiveStore:
         if row["kind"] == "bom":
             board_type = updates.get("board_type", row["board_type"])
             updates["board_code"] = "RD" if board_type == "开发板" else "PD" if board_type == "产品板" else ""
+            if "main_chip" in updates:
+                updates["main_chip"] = updates["main_chip"].upper()
         if updates:
             assignments = ", ".join(f"{name} = :{name}" for name in updates)
             with self._connect() as connection:
@@ -314,17 +340,14 @@ class ArchiveStore:
         rows = self._load_rows()
         indexed = 0
         for row in rows:
-            if row["excel_file_id"] is not None:
-                content = self._excel_content(int(row["excel_file_id"]))
-            else:
-                try:
-                    content = _extract_document_text(
-                        self._document_path(row).read_bytes(), f".{row['extension']}"
-                    )
-                    content = _sanitize_document_text(content)[: self.MAX_INDEX_CHARS]
-                except Exception as exc:
-                    self._update_status(row["id"], "failed", str(exc))
-                    continue
+            try:
+                content = _extract_document_text(
+                    self._document_path(row).read_bytes(), f".{row['extension']}"
+                )
+                content = _sanitize_document_text(content)[: self.MAX_INDEX_CHARS]
+            except Exception as exc:
+                self._update_status(row["id"], "failed", str(exc))
+                continue
             status = "ready" if content else "empty"
             with self._connect() as connection:
                 connection.execute(
@@ -433,13 +456,18 @@ class ArchiveStore:
             return False
         if vendor and row["vendor"] != vendor:
             return False
-        if board_code and row["board_code"] != board_code:
+        if board_code == "__other__":
+            if row["board_code"] in {"RD", "PD"}:
+                return False
+        elif board_code and row["board_code"] != board_code:
             return False
-        if main_chip and row["main_chip"] != main_chip:
+        if main_chip == "__other__":
+            if row["main_chip"]:
+                return False
+        elif main_chip and row["main_chip"] != main_chip:
             return False
-        terms = _query_terms(query)
         haystack = _normalize_text(self._search_text(row))
-        return not terms or all(term in haystack for term in terms)
+        return query_matches(haystack, _normalize_text(query))
 
     @staticmethod
     def _search_text(row: dict[str, Any]) -> str:
@@ -557,7 +585,9 @@ def _extract_document_text(payload: bytes, suffix: str) -> str:
             f"工作表：{sheet.name}\n" + "\n".join(",".join(str(value) for value in sheet.row_values(index)) for index in range(sheet.nrows))
             for sheet in workbook.sheets()
         )
-    return payload.decode("utf-8", errors="replace")
+    if suffix in {".txt", ".md"}:
+        return payload.decode("utf-8", errors="replace")
+    return ""
 
 
 def _sha256(payload: bytes) -> str:
@@ -575,7 +605,7 @@ def _query_terms(query: str) -> list[str]:
 
 
 def _text(value: Any) -> str:
-    return str(value or "").strip()
+    return _sanitize_document_text(str(value or "")).strip()
 
 
 def _excerpt(content: str, terms: list[str]) -> str:
@@ -600,6 +630,12 @@ def _format_size(size: int) -> str:
 def mime_type(suffix: str) -> str:
     return {
         ".pdf": "application/pdf",
+        ".doc": "application/msword",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".xls": "application/vnd.ms-excel",
         ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
